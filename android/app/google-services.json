@@ -1,0 +1,91 @@
+{
+  "project_info": {
+    "project_number": "884928621500",
+    "firebase_url": "https://parentledger-prod-default-rtdb.firebaseio.com",
+    "project_id": "parentledger-prod",
+    "storage_bucket": "parentledger-prod.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:884928621500:android:430969777f2843ee5899b9",
+        "android_client_info": {
+          "package_name": "com.example.parentledger"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "884928621500-imouv7kn5jelrg79k0u41bg77gk7ero0.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.parentledger",
+            "certificate_hash": "c1a3bae13382cb8ad7fca77673a9afa79efd32e8"
+          }
+        },
+        {
+          "client_id": "884928621500-1rl1kpdngcap5g3m20o0ggvhnfscf7as.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCIzlG0CDHMzepP1prLQnH8hXGwbG4PhdI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "884928621500-1rl1kpdngcap5g3m20o0ggvhnfscf7as.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "884928621500-cq6aarjc7s824utlr8s1fvd0ftbaaam7.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.parentledger"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:884928621500:android:a77997b61cc170095899b9",
+        "android_client_info": {
+          "package_name": "com.parentledger.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "884928621500-1rl1kpdngcap5g3m20o0ggvhnfscf7as.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCIzlG0CDHMzepP1prLQnH8hXGwbG4PhdI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "884928621500-1rl1kpdngcap5g3m20o0ggvhnfscf7as.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "884928621500-cq6aarjc7s824utlr8s1fvd0ftbaaam7.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.parentledger"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

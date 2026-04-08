@@ -1,0 +1,73 @@
+name: parentledger
+description: Premium Co-Parent Communication Platform
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.6.0  
+  pdf: 3.10.4
+  path_provider: ^2.1.2
+
+  # STATE
+  provider: ^6.1.2
+
+  # FIREBASE
+  firebase_core: ^3.1.0
+  firebase_auth: ^5.1.0
+  cloud_firestore: ^5.0.0
+  firebase_storage: ^12.0.0
+  firebase_analytics: ^11.0.0
+  cloud_functions: ^5.0.1
+  firebase_app_check: ^0.3.0
+
+
+  flutter_stripe: ^10.1.0
+
+  # UI PREMIUM
+  flutter_animate: ^4.5.0
+  flutter_svg: ^2.2.4
+  google_fonts: ^6.2.1
+  image_picker: ^1.0.7
+  sms_autofill: ^2.3.0
+  image_cropper: ^7.0.5
+  fl_chart: ^0.68.0
+  printing: ^5.12.0
+
+  # NAVIGATION
+  go_router: ^14.0.0
+  geolocator: ^11.0.0
+  google_maps_flutter: ^2.6.0
+  url_launcher: ^6.3.0
+  google_places_flutter: ^2.0.7
+  crypto: ^3.0.3
+  geocoding: ^2.1.1
+
+  # UTIL
+  intl: ^0.19.0
+  uuid: ^4.4.0
+
+  cupertino_icons: ^1.0.6
+  purchases_flutter: ^8.11.0
+  purchases_ui_flutter: ^8.11.0
+  in_app_purchase: ^3.1.11
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - lib/assets/emblem.svg
+    - lib/design/splash_screen_background.png
+    - lib/design/premium_entry_screen_background.png
+    - lib/assets/parentledger_logo.svg

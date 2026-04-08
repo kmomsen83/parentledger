@@ -1,0 +1,30 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+
+<defs>
+<linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0%" stop-color="#A7DBFF"/>
+<stop offset="100%" stop-color="#3D7CFF"/>
+</linearGradient>
+</defs>
+
+<!-- BACK FOOT -->
+<g transform="rotate(-18 210 290)">
+<ellipse cx="210" cy="290" rx="34" ry="56" fill="url(#g)"/>
+<circle cx="185" cy="230" r="9" fill="url(#g)"/>
+<circle cx="200" cy="220" r="10" fill="url(#g)"/>
+<circle cx="216" cy="215" r="11" fill="url(#g)"/>
+<circle cx="232" cy="220" r="10" fill="url(#g)"/>
+<circle cx="245" cy="235" r="8" fill="url(#g)"/>
+</g>
+
+<!-- FRONT FOOT -->
+<g transform="rotate(14 305 210)">
+<ellipse cx="305" cy="210" rx="34" ry="56" fill="url(#g)"/>
+<circle cx="280" cy="150" r="9" fill="url(#g)"/>
+<circle cx="295" cy="140" r="10" fill="url(#g)"/>
+<circle cx="311" cy="135" r="11" fill="url(#g)"/>
+<circle cx="327" cy="140" r="10" fill="url(#g)"/>
+<circle cx="340" cy="155" r="8" fill="url(#g)"/>
+</g>
+
+</svg>
