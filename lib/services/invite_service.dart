@@ -1,135 +1,224 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/foundation.dart';
+import 'package:uuid/uuid.dart';
+
+import 'event_logger_service.dart';
+
 
 class InviteService {
-static final _db = FirebaseFirestore.instance;
+  static final _db = FirebaseFirestore.instance;
+  static final _functions =
+      FirebaseFunctions.instanceFor(region: 'us-central1');
+  static const _uuid = Uuid();
 
-/// ================================
-/// 🔥 ACCEPT INVITE (FULL FLOW)
-/// ================================
-static Future<void> acceptInvite(String inviteId) async {
-final user = FirebaseAuth.instance.currentUser;
+  /// Pending invite from deep link (consumed by [checkAndAcceptInvite]).
+  static String? pendingInviteId;
+  static String? pendingInviteToken;
 
-if (user == null) {
-throw Exception("User not authenticated");
-}
+  static const String _inviteBaseUrl = 'https://parentledger.app/invite';
 
-final inviteRef = _db.collection("caseInvites").doc(inviteId);
-final userRef = _db.collection("users").doc(user.uid);
+  /// New token-based invite creation.
+  static Future<String> createInvite({
+    required String caseId,
+    required String role,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw Exception('User not authenticated');
+    }
+    final normalizedRole = role.trim().toLowerCase();
+    if (normalizedRole != 'coparent' && normalizedRole != 'attorney') {
+      throw Exception('Invalid role. Must be coparent or attorney.');
+    }
+    final token = _uuid.v4();
+    final inviteRef = _db.collection('caseInvites').doc();
+    final maxUses = normalizedRole == 'coparent' ? 1 : 3;
 
-await _db.runTransaction((tx) async {
-final inviteSnap = await tx.get(inviteRef);
+    await inviteRef.set(<String, dynamic>{
+      'caseId': caseId,
+      'createdBy': user.uid,
+      'role': normalizedRole,
+      'token': token,
+      'status': 'pending',
+      'maxUses': maxUses,
+      'uses': 0,
+      'expiresAt': Timestamp.fromDate(
+        DateTime.now().add(const Duration(hours: 48)),
+      ),
+      'createdAt': FieldValue.serverTimestamp(),
+    });
 
-if (!inviteSnap.exists) {
-throw Exception("Invite not found");
-}
+    await EventLoggerService.logEventForActor(
+      caseId: caseId,
+      type: 'invite_sent',
+      title: 'Invite sent',
+      description: 'A $normalizedRole invite was created.',
+      actorId: user.uid,
+      metadata: <String, dynamic>{
+        'inviteId': inviteRef.id,
+        'role': normalizedRole,
+      },
+    );
 
-final invite = inviteSnap.data() as Map<String, dynamic>;
+    return '$_inviteBaseUrl?token=$token';
+  }
 
-if (invite["status"] != "pending") {
-throw Exception("Invite already used");
-}
+  static Future<Map<String, dynamic>> validateCaseInviteToken(
+    String token,
+  ) async {
+    final callable = _functions.httpsCallable('validateCaseInvite');
+    final result = await callable.call(<String, dynamic>{'token': token});
+    return Map<String, dynamic>.from(
+      (result.data as Map?)?.cast<String, dynamic>() ??
+          const <String, dynamic>{},
+    );
+  }
 
-final caseId = invite["caseId"];
+  static Future<Map<String, dynamic>> acceptCaseInviteToken(String token) async {
+    final callable = _functions.httpsCallable('acceptCaseInvite');
+    final result = await callable.call(<String, dynamic>{'token': token});
+    return Map<String, dynamic>.from(
+      (result.data as Map?)?.cast<String, dynamic>() ??
+          const <String, dynamic>{},
+    );
+  }
 
-if (caseId == null) {
-throw Exception("Invalid invite");
-}
+  /// Accept invite: transaction on Firestore (client-side).
+  static Future<void> acceptInvite(String inviteId) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw Exception('User not authenticated');
+    }
 
-/// 🔥 GET USER DATA
-final userSnap = await tx.get(userRef);
-final userData = userSnap.data();
+    try {
+      final callable = _functions.httpsCallable('acceptInvite');
+      await callable.call(<String, dynamic>{'inviteId': inviteId});
+    } on FirebaseFunctionsException catch (e) {
+      if (kDebugMode) {
+        debugPrint('acceptInvite callable failed: ${e.code} ${e.message}');
+      }
+      rethrow;
+    }
 
-final existingCaseId = userData?["caseId"];
+    await _handleMergeIfNeeded(user.uid);
+    // `invite_accepted` is recorded by the `acceptInvite` Cloud Function (hashed ledger).
+  }
 
-/// =========================================
-/// 🔥 MERGE FLAG (OPTION B SAFE)
-/// =========================================
-if (existingCaseId != null && existingCaseId != caseId) {
-tx.update(userRef, {
-"mergeFromCaseId": existingCaseId,
-});
-}
+  /// Shareable attorney invite (no phone required). Returns new [caseInvites] document id.
+  static Future<String> createAttorneyInvite({
+    required String caseId,
+    required String fromUserId,
+    String? intendedRecipientEmail,
+    String? intendedRecipientUserId,
+  }) async {
+    // Kept for call-site compatibility; backend derives canonical sender/case.
+    assert(caseId.isNotEmpty && fromUserId.isNotEmpty);
+    // Backend callable ensures canonical lifecycle mirroring, logging, and
+    // intended-recipient binding checks.
+    final callable = _functions.httpsCallable('createCaseInvite');
+    final result = await callable.call(<String, dynamic>{
+      'role': 'attorney',
+      'toPhone': '',
+      'intendedRecipientEmail': intendedRecipientEmail?.trim().toLowerCase(),
+      'intendedRecipientUserId': intendedRecipientUserId?.trim(),
+    });
+    final data = Map<String, dynamic>.from(
+      (result.data as Map?)?.cast<String, dynamic>() ??
+          const <String, dynamic>{},
+    );
+    final inviteId = (data['inviteId'] ?? '').toString();
+    if (inviteId.isEmpty) {
+      throw Exception('Could not create attorney invite.');
+    }
+    return inviteId;
+  }
 
-/// 🔥 JOIN NEW CASE
-tx.set(userRef, {
-"caseId": caseId,
-"onboardingStep": "children_added",
-}, SetOptions(merge: true));
+  static Future<Map<String, dynamic>> validateInvite(String inviteId) async {
+    final callable = _functions.httpsCallable('validateInvite');
+    final result = await callable.call(<String, dynamic>{'inviteId': inviteId});
+    final data = Map<String, dynamic>.from(
+      (result.data as Map?)?.cast<String, dynamic>() ??
+          const <String, dynamic>{},
+    );
+    return data;
+  }
 
-/// 🔥 ADD TO CASE MEMBERS
-final memberRef = _db
-.collection("cases")
-.doc(caseId)
-.collection("members")
-.doc(user.uid);
+  static Future<void> _handleMergeIfNeeded(String userId) async {
+    final userRef = _db.collection('users').doc(userId);
+    final userSnap = await userRef.get();
 
-tx.set(memberRef, {
-"userId": user.uid,
-"joinedAt": FieldValue.serverTimestamp(),
-});
+    final data = userSnap.data();
+    final mergeFrom = data?['mergeFromCaseId'];
+    final newCaseId = data?['caseId'];
 
-/// 🔥 MARK INVITE ACCEPTED
-tx.update(inviteRef, {
-"status": "accepted",
-"acceptedBy": user.uid,
-"acceptedAt": FieldValue.serverTimestamp(),
-});
-});
+    if (mergeFrom == null || newCaseId == null) return;
 
-/// =========================================
-/// 🔥 HANDLE MERGE OUTSIDE TX (SAFE)
-/// =========================================
-await _handleMergeIfNeeded(user.uid);
-}
+    final oldChildren = await _db
+        .collection('cases')
+        .doc(mergeFrom)
+        .collection('children')
+        .get();
 
-/// ================================
-/// 🔥 MERGE CASES (SAFE OUTSIDE TX)
-/// ================================
-static Future<void> _handleMergeIfNeeded(String userId) async {
-final userRef = _db.collection("users").doc(userId);
-final userSnap = await userRef.get();
+    for (final doc in oldChildren.docs) {
+      await _db
+          .collection('cases')
+          .doc(newCaseId)
+          .collection('children')
+          .add(doc.data());
+    }
 
-final data = userSnap.data();
-final mergeFrom = data?["mergeFromCaseId"];
-final newCaseId = data?["caseId"];
+    await userRef.update({
+      'mergeFromCaseId': FieldValue.delete(),
+    });
+  }
 
-if (mergeFrom == null || newCaseId == null) return;
+  static Future<void> checkAndAcceptInvite(User user) async {
+    if (pendingInviteId != null) {
+      final inviteId = pendingInviteId!;
+      pendingInviteId = null;
+      try {
+        await acceptInvite(inviteId);
+      } catch (_) {
+        if (kDebugMode) {
+          debugPrint('Invite accept failed');
+        }
+      }
+      return;
+    }
 
-final oldChildren = await _db
-.collection("cases")
-.doc(mergeFrom)
-.collection("children")
-.get();
+    final phone = user.phoneNumber;
+    try {
+      if (phone != null && phone.isNotEmpty) {
+        final phoneInvites = await _db
+            .collection('caseInvites')
+            .where('toPhone', isEqualTo: phone)
+            .where('status', isEqualTo: 'pending')
+            .limit(1)
+            .get();
+        if (phoneInvites.docs.isNotEmpty) {
+          await acceptInvite(phoneInvites.docs.first.id);
+          return;
+        }
+      }
 
-for (final doc in oldChildren.docs) {
-await _db
-.collection("cases")
-.doc(newCaseId)
-.collection("children")
-.add(doc.data());
-}
-
-/// 🔥 CLEAN UP FLAG
-await userRef.update({
-"mergeFromCaseId": FieldValue.delete(),
-});
-}
-
-/// ================================
-/// 🔥 AUTO ACCEPT (ROUTER)
-/// ================================
-static Future<void> checkAndAcceptInvite(User user) async {
-final invites = await _db
-.collection("caseInvites")
-.where("toPhone", isEqualTo: user.phoneNumber)
-.where("status", isEqualTo: "pending")
-.get();
-
-if (invites.docs.isEmpty) return;
-
-final invite = invites.docs.first;
-
-await acceptInvite(invite.id);
-}
+      final email = user.email?.trim().toLowerCase();
+      if (email != null && email.isNotEmpty) {
+        final emailInvites = await _db
+            .collection('caseInvites')
+            .where('intendedRecipient.email', isEqualTo: email)
+            .where('status', isEqualTo: 'pending')
+            .limit(1)
+            .get();
+        if (emailInvites.docs.isNotEmpty) {
+          await acceptInvite(emailInvites.docs.first.id);
+        }
+      }
+    } catch (_) {
+      if (kDebugMode) {
+        debugPrint('Invite lookup failed');
+      }
+    }
+  }
 }

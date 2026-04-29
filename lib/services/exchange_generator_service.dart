@@ -63,7 +63,7 @@ await _db
 "type": type,
 "scheduledTime": Timestamp.fromDate(exchangeTime),
 "status": "scheduled",
-"createdAt": Timestamp.now(),
+"createdAt": FieldValue.serverTimestamp(),
 
 });
 

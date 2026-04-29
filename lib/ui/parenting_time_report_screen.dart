@@ -157,7 +157,7 @@ list.add("Missed exchanges detected ($missed)");
 }
 
 if (riskScore > 60) {
-list.add("Elevated custody risk indicators detected");
+list.add('Elevated case compliance indicators detected');
 }
 
 if ((yourTime - 0.5).abs() > 0.15) {

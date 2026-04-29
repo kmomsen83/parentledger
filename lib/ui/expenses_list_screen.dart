@@ -1,255 +1,419 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/services.dart';
+import 'package:parentledger/l10n/context_l10n.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+
+import '../design/design.dart';
+import '../providers/case_context.dart';
+import '../services/case_expense_service.dart';
+import '../services/case_switcher_service.dart';
+import '../services/export_service.dart';
+import 'package:printing/printing.dart';
+import 'approve_deny_expense_screen.dart';
+import 'submit_expense_screen.dart';
+import 'widgets/attorney_case_switcher.dart';
+import 'widgets/trust_elements.dart';
 
 class ExpensesListScreen extends StatefulWidget {
-const ExpensesListScreen({super.key});
+  const ExpensesListScreen({super.key});
 
-@override
-State<ExpensesListScreen> createState() =>
-_ExpensesListScreenState();
+  @override
+  State<ExpensesListScreen> createState() => _ExpensesListScreenState();
 }
 
 class _ExpensesListScreenState extends State<ExpensesListScreen> {
+  bool _selectMode = false;
+  final Set<String> _selected = <String>{};
 
-final List<Map<String, dynamic>> expenses = [
-{
-"title": "Soccer Registration",
-"child": "Jordan",
-"amount": 120,
-"status": "Pending",
-"owedByYou": true,
-"time": "Today"
-},
-{
-"title": "Dental Visit",
-"child": "Ava",
-"amount": 240,
-"status": "Approved",
-"owedByYou": false,
-"time": "Yesterday"
-},
-{
-"title": "School Supplies",
-"child": "Jordan",
-"amount": 60,
-"status": "Disputed",
-"owedByYou": true,
-"time": "Mon"
-},
-];
+  Future<void> _openSubmitExpense() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const SubmitExpenseScreen(),
+      ),
+    );
+  }
 
-Color statusColor(String s) {
-switch (s) {
-case "Approved":
-return Colors.green;
-case "Disputed":
-return Colors.red;
-default:
-return Colors.orange;
-}
-}
+  @override
+  Widget build(BuildContext context) {
+    final session = context.watch<CaseContext>();
+    final switchedCaseId = context.watch<CaseSwitcherService>().selectedCaseId;
+    final caseId = session.isAttorney
+        ? (switchedCaseId ?? session.caseId)
+        : session.caseId;
+    final df = DateFormat.yMMMd().add_jm();
 
-Widget expenseCard(Map<String, dynamic> e) {
-return GestureDetector(
-onTap: () {
-/// ⭐ Navigate to Expense Detail Screen
-},
-child: Container(
-margin: const EdgeInsets.only(bottom: 16),
-padding: const EdgeInsets.all(18),
-decoration: BoxDecoration(
-color: Colors.white,
-borderRadius: BorderRadius.circular(22),
-boxShadow: [
-BoxShadow(
-color: Colors.black.withOpacity(.04),
-blurRadius: 14,
-offset: const Offset(0, 6),
-)
-],
-),
-child: Column(
-children: [
+    return Scaffold(
+      backgroundColor: PLDesign.background,
+      appBar: AppBar(
+        title: Text(context.tTone('sharedExpenses')),
+        backgroundColor: PLDesign.surface,
+        foregroundColor: PLDesign.textPrimary,
+        elevation: 0,
+        actions: [
+          const AttorneyCaseSwitcher(),
+          if (_selectMode)
+            IconButton(
+              tooltip: 'Select all',
+              icon: const Icon(Icons.select_all),
+              onPressed: () {
+                // no-op here, handled from list builder on current docs
+              },
+            )
+          else
+            IconButton(
+              tooltip: 'Bulk select',
+              icon: const Icon(Icons.checklist),
+              onPressed: () => setState(() {
+                _selectMode = true;
+                _selected.clear();
+              }),
+            ),
+          IconButton(
+            tooltip: 'Add expense',
+            icon: const Icon(Icons.add_rounded),
+            onPressed: caseId == null ? null : _openSubmitExpense,
+          ),
+        ],
+      ),
+      body: caseId == null
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  'No case linked. Complete workspace setup to track expenses.',
+                  style: PLDesign.body.copyWith(height: 1.4),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            )
+          : Column(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(20, 10, 20, 0),
+                  child: TrustNote(
+                    text:
+                        'Expenses are tracked with timestamps and full history for transparency.',
+                  ),
+                ),
+                Expanded(
+                  child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                    stream: CaseExpenseService.watchExpenses(caseId),
+                    builder: (context, snap) {
+                      if (snap.hasError) {
+                        return Center(
+                          child: Text(
+                            'Error: ${snap.error}',
+                            style:
+                                PLDesign.body.copyWith(color: PLDesign.danger),
+                          ),
+                        );
+                      }
+                      if (snap.connectionState == ConnectionState.waiting &&
+                          !snap.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      final docs = snap.data?.docs ?? [];
+                      if (docs.isEmpty) {
+                        return Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(32),
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(
+                                  Icons.receipt_long_rounded,
+                                  size: 56,
+                                  color: PLDesign.textMuted,
+                                ),
+                                const SizedBox(height: 16),
+                                Text(
+                                  'No expenses logged yet — all entries are tracked with history',
+                                  style: PLDesign.sectionTitle
+                                      .copyWith(fontSize: 18),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Track and split costs with clear records for review.',
+                                  style:
+                                      PLDesign.caption.copyWith(height: 1.35),
+                                  textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 24),
+                                FilledButton(
+                                  onPressed: _openSubmitExpense,
+                                  child: Text(context.tTone('addFirstExpense')),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      }
 
-/// HEADER
-Row(
-children: [
+                      return ListView.separated(
+                        padding: const EdgeInsets.all(20),
+                        itemCount: docs.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 12),
+                        itemBuilder: (context, i) {
+                          final doc = docs[i];
+                          final e = doc.data();
+                          final paid =
+                              e['paid'] == true || e['status'] == 'paid';
+                          final denied = e['status'] == 'denied';
+                          final amount = (e['amount'] is num)
+                              ? (e['amount'] as num).toDouble()
+                              : double.tryParse('${e['amount']}') ?? 0.0;
+                          final desc = (e['description'] ?? '').toString();
+                          final created = e['createdAt'];
+                          String whenLabel = '—';
+                          if (created is Timestamp) {
+                            whenLabel = df.format(created.toDate());
+                          }
 
-CircleAvatar(
-radius: 22,
-backgroundColor:
-Colors.green.withOpacity(.1),
-child: const Icon(
-Icons.receipt_long,
-color: Colors.green,
-),
-),
-
-const SizedBox(width: 14),
-
-Expanded(
-child: Column(
-crossAxisAlignment:
-CrossAxisAlignment.start,
-children: [
-
-Text(
-e["title"],
-style: const TextStyle(
-fontWeight: FontWeight.bold,
-fontSize: 17,
-),
-),
-
-const SizedBox(height: 4),
-
-Text(
-e["child"],
-style: const TextStyle(
-color: Colors.black54),
-),
-],
-),
-),
-
-Column(
-crossAxisAlignment:
-CrossAxisAlignment.end,
-children: [
-
-Text(
-"\$${e["amount"]}",
-style: const TextStyle(
-fontWeight: FontWeight.bold,
-fontSize: 18,
-),
-),
-
-const SizedBox(height: 4),
-
-Text(
-e["time"],
-style: const TextStyle(
-color: Colors.black45,
-fontSize: 11),
-)
-],
-)
-],
-),
-
-const SizedBox(height: 14),
-
-/// STATUS + WHO OWES
-Row(
-children: [
-
-Container(
-padding:
-const EdgeInsets.symmetric(
-horizontal: 10,
-vertical: 5),
-decoration: BoxDecoration(
-color: statusColor(
-e["status"])
-.withOpacity(.15),
-borderRadius:
-BorderRadius.circular(20),
-),
-child: Text(
-e["status"],
-style: TextStyle(
-color:
-statusColor(e["status"]),
-fontWeight:
-FontWeight.bold,
-fontSize: 12,
-),
-),
-),
-
-const SizedBox(width: 10),
-
-Expanded(
-child: Text(
-e["owedByYou"]
-? "You owe reimbursement"
-: "Co-parent owes you",
-style: TextStyle(
-fontWeight: FontWeight.w600,
-color: e["owedByYou"]
-? Colors.orange
-: Colors.green,
-),
-),
-)
-],
-),
-
-const SizedBox(height: 14),
-
-/// ACTIONS
-Row(
-children: [
-
-Expanded(
-child: OutlinedButton(
-onPressed: () {},
-child:
-const Text("View Detail"),
-),
-),
-
-const SizedBox(width: 10),
-
-Expanded(
-child: ElevatedButton(
-onPressed: () {},
-child:
-const Text("Resolve"),
-),
-),
-],
-)
-],
-),
-),
-);
-}
-
-@override
-Widget build(BuildContext context) {
-return Scaffold(
-backgroundColor: const Color(0xfff5f6fb),
-
-appBar: AppBar(
-title: const Text("Expenses"),
-elevation: 0,
-backgroundColor: Colors.white,
-foregroundColor: Colors.black,
-actions: [
-
-IconButton(
-icon: const Icon(Icons.summarize),
-onPressed: () {
-/// ⭐ Expense Balance Summary Screen
-},
-),
-
-IconButton(
-icon: const Icon(Icons.add),
-onPressed: () {
-/// ⭐ Submit Expense Screen
-},
-)
-],
-),
-
-body: ListView.builder(
-padding: const EdgeInsets.all(20),
-itemCount: expenses.length,
-itemBuilder: (c, i) =>
-expenseCard(expenses[i]),
-),
-);
-}
+                          final selected = _selected.contains(doc.id);
+                          return Container(
+                            padding: const EdgeInsets.all(18),
+                            decoration: BoxDecoration(
+                              color: PLDesign.card,
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(
+                                color: selected
+                                    ? PLDesign.primary
+                                    : PLDesign.border,
+                                width: selected ? 1.6 : 1,
+                              ),
+                              boxShadow: PLDesign.softShadow,
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        desc.isEmpty ? 'Expense' : desc,
+                                        style: PLDesign.body.copyWith(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 16,
+                                        ),
+                                      ),
+                                    ),
+                                    Text(
+                                      '\$${amount.toStringAsFixed(2)}',
+                                      style: PLDesign.body.copyWith(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 17,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  whenLabel,
+                                  style: PLDesign.caption,
+                                ),
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: paid
+                                            ? PLDesign.success
+                                                .withValues(alpha: 0.15)
+                                            : denied
+                                                ? PLDesign.danger
+                                                    .withValues(alpha: 0.15)
+                                                : PLDesign.warning
+                                                    .withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(20),
+                                      ),
+                                      child: Text(
+                                        paid
+                                            ? 'Paid'
+                                            : denied
+                                                ? 'Denied'
+                                                : 'Unpaid',
+                                        style: PLDesign.caption.copyWith(
+                                          color: paid
+                                              ? PLDesign.success
+                                              : denied
+                                                  ? PLDesign.danger
+                                                  : PLDesign.warning,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    if (!paid)
+                                      TextButton(
+                                        onPressed: () async {
+                                          if (_selectMode) {
+                                            setState(() {
+                                              if (selected) {
+                                                _selected.remove(doc.id);
+                                              } else {
+                                                _selected.add(doc.id);
+                                              }
+                                            });
+                                            return;
+                                          }
+                                          await Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) =>
+                                                  ApproveDenyExpenseScreen(
+                                                expenseId: doc.id,
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                        child: Text(context.tTone('review')),
+                                      )
+                                    else
+                                      TextButton(
+                                        onPressed: () async {
+                                          if (_selectMode) {
+                                            setState(() {
+                                              if (selected) {
+                                                _selected.remove(doc.id);
+                                              } else {
+                                                _selected.add(doc.id);
+                                              }
+                                            });
+                                            return;
+                                          }
+                                          try {
+                                            await CaseExpenseService.setPaid(
+                                              caseId: caseId,
+                                              expenseId: doc.id,
+                                              paid: false,
+                                            );
+                                            if (context.mounted) {
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                    'Status changes are recorded for your case history.',
+                                                  ),
+                                                ),
+                                              );
+                                            }
+                                          } catch (err) {
+                                            if (context.mounted) {
+                                              ScaffoldMessenger.of(context)
+                                                  .showSnackBar(
+                                                SnackBar(content: Text('$err')),
+                                              );
+                                            }
+                                          }
+                                        },
+                                        child:
+                                            Text(context.tTone('markUnpaid')),
+                                      ),
+                                    if (_selectMode)
+                                      Checkbox(
+                                        value: selected,
+                                        onChanged: (_) {
+                                          setState(() {
+                                            if (selected) {
+                                              _selected.remove(doc.id);
+                                            } else {
+                                              _selected.add(doc.id);
+                                            }
+                                          });
+                                        },
+                                      ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+      bottomNavigationBar: _selectMode && caseId != null
+          ? SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () => setState(() {
+                          _selectMode = false;
+                          _selected.clear();
+                        }),
+                        child: const Text('Done'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: _selected.isEmpty
+                            ? null
+                            : () async {
+                                final ids = _selected.take(10).toList();
+                                final snap = await FirebaseFirestore.instance
+                                    .collection('cases')
+                                    .doc(caseId)
+                                    .collection('expenses')
+                                    .where(FieldPath.documentId, whereIn: ids)
+                                    .get();
+                                final rows = snap.docs.map((d) {
+                                  final m = d.data();
+                                  final ts = m['createdAt'];
+                                  return ExportRow(
+                                    type: 'expense',
+                                    date: ts is Timestamp ? ts.toDate() : null,
+                                    description: (m['description'] ?? 'Expense')
+                                        .toString(),
+                                    amount: (m['amount'] is num)
+                                        ? (m['amount'] as num).toDouble()
+                                        : null,
+                                    tags: List<String>.from(
+                                        m['tags'] ?? const []),
+                                    evidence: m['evidence'] == true,
+                                  );
+                                }).toList();
+                                final pdf = await ExportService.buildPdf(
+                                  caseTitle: 'Case $caseId',
+                                  childrenCount: 0,
+                                  rows: rows,
+                                );
+                                await Printing.sharePdf(
+                                  bytes: pdf,
+                                  filename: 'expenses_$caseId.pdf',
+                                );
+                                final csv = ExportService.buildCsv(rows);
+                                await Clipboard.setData(
+                                  ClipboardData(
+                                      text: String.fromCharCodes(csv)),
+                                );
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text('PDF shared and CSV copied.'),
+                                  ),
+                                );
+                              },
+                        child: const Text('Export'),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+          : null,
+    );
+  }
 }

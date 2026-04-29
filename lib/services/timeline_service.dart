@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/timeline_event_model.dart';
+import '../timeline/timeline_mapper.dart';
 
 class TimelineService {
 
@@ -18,7 +19,7 @@ return FirebaseFirestore.instance
 .snapshots()
 .map(
 (snap) => snap.docs
-.map((d) => TimelineEventModel.fromDoc(d))
+.map(TimelineMapper.mapFromFirestore)
 .toList(),
 );
 }
@@ -44,7 +45,7 @@ await FirebaseFirestore.instance
 "title": title,
 "notes": notes ?? "",
 "date": Timestamp.fromDate(date),
-"createdAt": Timestamp.now(),
+"createdAt": FieldValue.serverTimestamp(),
 });
 }
 

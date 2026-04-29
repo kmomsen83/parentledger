@@ -1,67 +1,73 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'case_messaging_service.dart';
+
+/// Legacy facade — all data lives under
+/// `cases/{caseId}/conversations/{conversationId}/messages`.
 class MessageService {
-static final _db = FirebaseFirestore.instance;
+  MessageService._();
 
-/// ================================
-/// 🔥 SEND MESSAGE (IMMUTABLE)
-/// ================================
-static Future<void> sendMessage({
-required String conversationId,
-required String senderId,
-required String text,
-String? exchangeId,
-}) async {
-final convoRef =
-_db.collection("conversations").doc(conversationId);
+  static Future<void> sendCaseTextMessage({
+    required String caseId,
+    required String text,
+  }) =>
+      CaseMessagingService.sendTextMessage(
+        caseId: caseId,
+        conversationId: CaseMessagingService.defaultConversationId,
+        text: text,
+      );
 
-final msgRef = convoRef.collection("messages").doc();
+  static Future<void> markIncomingUnreadAsRead({
+    required String caseId,
+    required String readerUid,
+    int limit = 100,
+  }) =>
+      CaseMessagingService.markInboundRead(
+        caseId: caseId,
+        conversationId: CaseMessagingService.defaultConversationId,
+        readerUid: readerUid,
+        batchLimit: limit,
+      );
 
-await msgRef.set({
-"text": text,
-"senderId": senderId,
-"createdAt": FieldValue.serverTimestamp(),
-"readAt": null,
-"exchangeId": exchangeId,
-"edited": false, // 🔒 locked forever
-"deleted": false,
-});
+  static Future<List<QueryDocumentSnapshot>> getMessagesForExport(
+    String caseId, {
+    DateTime? since,
+    bool flaggedOnly = false,
+  }) =>
+      CaseMessagingService.fetchAllForExport(
+        caseId,
+        CaseMessagingService.defaultConversationId,
+        since: since,
+        flaggedOnly: flaggedOnly,
+      );
 
-await convoRef.set({
-"lastMessage": text,
-"lastTimestamp": FieldValue.serverTimestamp(),
-}, SetOptions(merge: true));
-}
+  static String messageBodyForDisplay(Map<String, dynamic> m) =>
+      (m['text'] ?? m['messageText'] ?? '').toString();
 
-/// ================================
-/// 👁️ MARK READ
-/// ================================
-static Future<void> markRead({
-required String conversationId,
-required String messageId,
-}) async {
-await _db
-.collection("conversations")
-.doc(conversationId)
-.collection("messages")
-.doc(messageId)
-.update({
-"readAt": FieldValue.serverTimestamp(),
-});
-}
+  /// Chronological transcript for AI / exports (oldest → newest).
+  static Future<String> buildThreadTranscript(
+    String caseId,
+    String conversationId, {
+    int limit = 120,
+  }) async {
+    final snap = await CaseMessagingService.messagesRef(caseId, conversationId)
+        .orderBy('createdAt', descending: true)
+        .limit(limit)
+        .get();
 
-/// ================================
-/// 📜 LEGAL EXPORT DATA
-/// ================================
-static Future<List<Map<String, dynamic>>> getTranscript(
-String conversationId) async {
-final snap = await _db
-.collection("conversations")
-.doc(conversationId)
-.collection("messages")
-.orderBy("createdAt")
-.get();
-
-return snap.docs.map((d) => d.data()).toList();
-}
+    final buf = StringBuffer();
+    for (final d in snap.docs.reversed) {
+      final m = d.data();
+      final body = messageBodyForDisplay(m).trim();
+      if (body.isEmpty) continue;
+      final ts = m['createdAt'];
+      var tsLabel = '';
+      if (ts is Timestamp) {
+        tsLabel = ts.toDate().toUtc().toIso8601String();
+      }
+      final sender = (m['senderId'] ?? '').toString();
+      buf.writeln('[$tsLabel] $sender: $body');
+    }
+    return buf.toString().trim();
+  }
 }

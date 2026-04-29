@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import '../design/design.dart';
+import 'package:parentledger/ui/ai_fairness_suggestion_screen.dart';
+
 class AiInsightsQuickViewScreen extends StatefulWidget {
 const AiInsightsQuickViewScreen({super.key});
 
@@ -86,19 +89,9 @@ child: Container(
 padding: const EdgeInsets.all(20),
 decoration: BoxDecoration(
 borderRadius: BorderRadius.circular(22),
-gradient: const LinearGradient(
-colors: [
-Color(0xffffffff),
-Color(0xfff8fafc),
-],
-),
-boxShadow: [
-BoxShadow(
-color: Colors.black.withValues(alpha: .05),
-blurRadius: 22,
-offset: const Offset(0, 14),
-),
-],
+color: PLDesign.card,
+border: Border.all(color: PLDesign.border),
+boxShadow: PLDesign.softShadow,
 ),
 child: Column(
 crossAxisAlignment: CrossAxisAlignment.start,
@@ -124,7 +117,7 @@ const SizedBox(height: 18),
 Text(
 title,
 style: const TextStyle(
-color: Color(0xff6b7280),
+color: Colors.white70,
 fontWeight: FontWeight.w600,
 ),
 ),
@@ -136,7 +129,7 @@ value,
 style: const TextStyle(
 fontSize: 22,
 fontWeight: FontWeight.w900,
-color: Color(0xff111827),
+color: Colors.white,
 ),
 ),
 ],
@@ -160,19 +153,8 @@ margin: const EdgeInsets.only(bottom: 14),
 padding: const EdgeInsets.all(18),
 decoration: BoxDecoration(
 borderRadius: BorderRadius.circular(18),
-gradient: LinearGradient(
-colors: [
-color.withValues(alpha: .08),
-color.withValues(alpha: .03),
-],
-),
-boxShadow: [
-BoxShadow(
-color: Colors.black.withValues(alpha: .04),
-blurRadius: 12,
-offset: const Offset(0, 6),
-),
-],
+color: PLDesign.card,
+border: Border.all(color: color.withValues(alpha: 0.45)),
 ),
 child: Row(
 children: [
@@ -196,14 +178,14 @@ Text(
 title,
 style: const TextStyle(
 fontWeight: FontWeight.w800,
-color: Color(0xff111827),
+color: Colors.white,
 ),
 ),
 const SizedBox(height: 4),
 Text(
 subtitle,
 style: const TextStyle(
-color: Color(0xff6b7280),
+color: Colors.white70,
 height: 1.3,
 ),
 ),
@@ -212,7 +194,7 @@ height: 1.3,
 ),
 
 const Icon(Icons.chevron_right,
-color: Colors.black26),
+color: Colors.white54),
 ],
 ),
 ),
@@ -225,24 +207,13 @@ color: Colors.black26),
 @override
 Widget build(BuildContext context) {
 return Scaffold(
-backgroundColor: const Color(0xfff3f5fb),
+backgroundColor: PLDesign.background,
 
 appBar: AppBar(
-elevation: 0,
-backgroundColor: Colors.transparent,
-leading: IconButton(
-icon: const Icon(Icons.arrow_back,
-color: Color(0xff111827)),
-onPressed: () => Navigator.pop(context),
-),
+backgroundColor: PLDesign.surface,
 title: const Text(
 "AI Insights",
-style: TextStyle(
-color: Color(0xff111827),
-fontWeight: FontWeight.w800,
 ),
-),
-centerTitle: true,
 ),
 
 body: SingleChildScrollView(
@@ -253,6 +224,14 @@ children: [
 heroCard(),
 
 const SizedBox(height: 22),
+Align(
+alignment: Alignment.centerLeft,
+child: Text(
+'AI insights are informational and based on recorded activity.',
+style: PLDesign.caption.copyWith(height: 1.35),
+),
+),
+const SizedBox(height: 12),
 
 Row(
 children: [
@@ -261,7 +240,7 @@ child: quickCard(
 icon: Icons.warning_amber_rounded,
 title: "Risk Level",
 value: "Moderate",
-color: Colors.orange,
+color: PLDesign.warning,
 ),
 ),
 const SizedBox(width: 14),
@@ -270,7 +249,7 @@ child: quickCard(
 icon: Icons.verified_rounded,
 title: "Compliance",
 value: "92%",
-color: Colors.green,
+color: PLDesign.success,
 ),
 ),
 ],
@@ -285,7 +264,7 @@ child: quickCard(
 icon: Icons.timeline_rounded,
 title: "Events Flagged",
 value: "3",
-color: Colors.blue,
+color: PLDesign.info,
 ),
 ),
 const SizedBox(width: 14),
@@ -294,7 +273,7 @@ child: quickCard(
 icon: Icons.psychology_alt_rounded,
 title: "Tone Score",
 value: "Stable",
-color: Colors.teal,
+color: PLDesign.ai,
 ),
 ),
 ],
@@ -309,7 +288,7 @@ child: Text(
 style: TextStyle(
 fontSize: 19,
 fontWeight: FontWeight.w900,
-color: Color(0xff111827),
+color: Colors.white,
 ),
 ),
 ),
@@ -319,26 +298,31 @@ const SizedBox(height: 14),
 alertTile(
 title: "Late exchange pattern detected",
 subtitle: "3 late arrivals in last 14 days",
-color: Colors.orange,
+color: PLDesign.warning,
 ),
 
 alertTile(
 title: "Escalating message tone trend",
 subtitle: "Increased negative sentiment",
-color: Colors.redAccent,
+color: PLDesign.danger,
 ),
 
 alertTile(
 title: "Expense submission delay",
 subtitle: "2 reimbursements pending",
-color: Colors.blue,
+color: PLDesign.info,
 ),
 
 const SizedBox(height: 32),
 
 pressable(
 onTap: () {
-Navigator.pushNamed(context, "/aiInsightsHub");
+Navigator.push(
+context,
+MaterialPageRoute(
+builder: (_) => const AiFairnessSuggestionScreen(),
+),
+);
 },
 child: Container(
 height: 62,
@@ -361,7 +345,7 @@ offset: const Offset(0, 16),
 ),
 child: const Center(
 child: Text(
-"Open Full AI Insights",
+"Open AI Fairness",
 style: TextStyle(
 color: Colors.white,
 fontWeight: FontWeight.w800,

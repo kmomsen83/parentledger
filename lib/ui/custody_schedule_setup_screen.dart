@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'calendar_month_view_screen.dart';
 
 class CustodyScheduleSetupScreen extends StatefulWidget {
 const CustodyScheduleSetupScreen({super.key});
@@ -131,11 +132,21 @@ void saveSchedule() {
 /// Trigger AI baseline
 /// Sync calendar
 
-Navigator.pushNamed(context, "/calendarMonthView");
+Navigator.push(
+  context,
+  MaterialPageRoute<void>(
+    builder: (_) => const CalendarMonthViewScreen(),
+  ),
+);
 }
 
 void previewCalendar() {
-Navigator.pushNamed(context, "/calendarMonthView");
+Navigator.push(
+  context,
+  MaterialPageRoute<void>(
+    builder: (_) => const CalendarMonthViewScreen(),
+  ),
+);
 }
 
 @override

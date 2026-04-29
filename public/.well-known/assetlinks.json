@@ -1,0 +1,13 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.parentledger.app",
+      "sha256_cert_fingerprints": [
+        "F6:11:31:B7:F5:92:6F:B7:61:EA:60:F5:54:F0:75:5C:2A:A5:DE:1F:40:0F:BA:FF:29:5B:4C:72:71:B1:A2:7F"
+      ]
+    }
+  }
+]
+

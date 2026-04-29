@@ -238,6 +238,81 @@ boxShadow: softShadow,
 
 static BoxDecoration cardDecoration = elevatedCard;
 
+/// ================= PREMIUM / INSTITUTIONAL =================
+/// For high-trust “case file” surfaces (gold-on-midnight, layered depth).
+
+static const Color premiumGold = Color(0xFFc9a227);
+static const Color premiumChampagne = Color(0xFFe8d9bc);
+
+static const LinearGradient premiumCaseCardGradient = LinearGradient(
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+  colors: [
+    Color(0xff252014),
+    Color(0xff12151d),
+    Color(0xff06080d),
+  ],
+  stops: [0.0, 0.45, 1.0],
+);
+
+static List<BoxShadow> _premiumCaseCardShadow(bool atRisk) => [
+      const BoxShadow(
+        color: Color(0x73000000),
+        blurRadius: 32,
+        offset: Offset(0, 18),
+      ),
+      BoxShadow(
+        color: (atRisk ? warning : premiumGold).withValues(alpha: 0.2),
+        blurRadius: 40,
+        offset: const Offset(0, 10),
+        spreadRadius: -8,
+      ),
+    ];
+
+static BoxDecoration premiumCaseComplianceCard({required bool atRisk}) {
+  return BoxDecoration(
+    gradient: premiumCaseCardGradient,
+    borderRadius: BorderRadius.circular(24),
+    border: Border.all(
+      color: atRisk
+          ? warning.withValues(alpha: 0.58)
+          : premiumGold.withValues(alpha: 0.4),
+      width: atRisk ? 1.85 : 1.35,
+    ),
+    boxShadow: _premiumCaseCardShadow(atRisk),
+  );
+}
+
+static const TextStyle premiumCaseEyebrow = TextStyle(
+  fontSize: 10,
+  fontWeight: FontWeight.w800,
+  letterSpacing: 1.45,
+  color: Color(0xCCc9a227),
+);
+
+static const TextStyle premiumCaseTitle = TextStyle(
+  fontSize: 20,
+  fontWeight: FontWeight.w600,
+  fontFamily: 'Georgia',
+  color: Colors.white,
+  height: 1.15,
+);
+
+/// Dashboard — section rails (editorial, low visual noise).
+static const TextStyle dashboardSectionLabel = TextStyle(
+  fontSize: 10,
+  fontWeight: FontWeight.w800,
+  letterSpacing: 1.65,
+  color: Color(0xFF64748b),
+);
+
+static const TextStyle dashboardHeroSubtitle = TextStyle(
+  fontSize: 14.5,
+  height: 1.4,
+  color: textMuted,
+  fontWeight: FontWeight.w400,
+);
+
 /// ================= COMPONENTS =================
 
 static Widget cardBox({required Widget child, EdgeInsets? padding}) {

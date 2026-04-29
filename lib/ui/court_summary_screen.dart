@@ -43,22 +43,27 @@ try {
 final uid = FirebaseAuth.instance.currentUser!.uid;
 final db = FirebaseFirestore.instance;
 
+final userSnap = await db.collection("users").doc(uid).get();
+final activeCaseId = (userSnap.data()?["caseId"] ?? "").toString();
+
 final results = await Future.wait([
 db.collection("riskEvents")
 .where("userId", isEqualTo: uid)
 .orderBy("timestamp")
 .get(),
-db.collection("proposals").where("userId", isEqualTo: uid).get(),
 db.collection("messages").where("userId", isEqualTo: uid).get(),
 db.collection("expenses").where("userId", isEqualTo: uid).get(),
 db.collection("documents").where("userId", isEqualTo: uid).get(),
 ]);
 
+final proposalsSnap = activeCaseId.isNotEmpty
+    ? await db.collection("proposals").where("caseId", isEqualTo: activeCaseId).get()
+    : await db.collection("proposals").limit(0).get();
+
 final eventsSnap = results[0] as QuerySnapshot;
-final proposalsSnap = results[1] as QuerySnapshot;
-final messagesSnap = results[2] as QuerySnapshot;
-final expensesSnap = results[3] as QuerySnapshot;
-final documentsSnap = results[4] as QuerySnapshot;
+final messagesSnap = results[1] as QuerySnapshot;
+final expensesSnap = results[2] as QuerySnapshot;
+final documentsSnap = results[3] as QuerySnapshot;
 
 exchanges = eventsSnap.docs.length;
 

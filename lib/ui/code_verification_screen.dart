@@ -47,20 +47,12 @@ return;
 setState(() => loading = true);
 
 try {
-print("🔥 VERIFY START");
-print("CODE: $code");
-
 final credential = PhoneAuthProvider.credential(
 verificationId: widget.verificationId,
 smsCode: code,
 );
 
-print("🔥 CREDENTIAL CREATED");
-
-final result = await FirebaseAuth.instance
-.signInWithCredential(credential);
-
-print("✅ SIGN IN SUCCESS: ${result.user?.uid}");
+await FirebaseAuth.instance.signInWithCredential(credential);
 
 if (!mounted) return;
 
@@ -68,7 +60,6 @@ if (!mounted) return;
 Navigator.of(context).popUntil((route) => route.isFirst);
 
 } catch (e) {
-print("❌ VERIFY ERROR: $e");
 
 if (!mounted) return;
 

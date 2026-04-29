@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:parentledger/l10n/context_l10n.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:provider/provider.dart';
+
 import 'package:parentledger/design/design.dart';
+import 'package:parentledger/providers/case_context.dart';
+import 'package:parentledger/ui/widgets/parent_upgrade_prompt.dart';
 
 class CustodyRiskScreen extends StatefulWidget {
 const CustodyRiskScreen({super.key});
@@ -168,21 +173,36 @@ return Colors.redAccent;
 /// ================================
 Future<void> generateSummary() async {
 final uid = FirebaseAuth.instance.currentUser!.uid;
+final caseId = context.read<CaseContext>().caseId;
+if (caseId == null) {
+if (!mounted) return;
+ScaffoldMessenger.of(context).showSnackBar(
+const SnackBar(content: Text("Case context missing")),
+);
+return;
+}
 
 final summary = events.map((e) {
 final d = e.data() as Map<String, dynamic>;
 return "- ${d['type']} (Severity ${d['severity']})";
 }).join("\n");
 
-final ref =
-FirebaseFirestore.instance.collection("legalSummaries").doc();
+final ref = FirebaseFirestore.instance
+.collection("cases")
+.doc(caseId)
+.collection("legalSummaries")
+.doc();
 
-await ref.set({
+await ref.set(
+{
 "summaryId": ref.id,
+"caseId": caseId,
 "createdBy": uid,
 "summaryText": summary,
 "createdAt": FieldValue.serverTimestamp(),
-});
+},
+SetOptions(merge: true),
+);
 
 if (!mounted) return;
 
@@ -196,13 +216,52 @@ const SnackBar(content: Text("Court summary generated")),
 /// ================================
 @override
 Widget build(BuildContext context) {
+final session = context.watch<CaseContext>();
+if (!session.isAttorney && !session.unlockedParentPremiumFeatures) {
+return Scaffold(
+backgroundColor: PLDesign.background,
+appBar: AppBar(title: Text(context.tTone('custodyRisk'))),
+body: Padding(
+padding: const EdgeInsets.all(24),
+child: Column(
+crossAxisAlignment: CrossAxisAlignment.stretch,
+children: [
+const SizedBox(height: 24),
+Text(
+'Advanced insights',
+style: PLDesign.heroTitle.copyWith(fontSize: 26),
+),
+const SizedBox(height: 12),
+Text(
+'Full history analytics and pattern views are part of ParentLedger Pro.',
+style: PLDesign.body.copyWith(
+color: PLDesign.textMuted,
+height: 1.4,
+),
+),
+const SizedBox(height: 28),
+FilledButton(
+onPressed: () => showParentUpgradePrompt(
+context,
+title: 'Unlock advanced insights',
+message:
+'Subscribe to see detailed behavior trends, drivers, and recommendations built from your case data.',
+),
+child: Text(context.tTone('viewProPlans')),
+),
+],
+),
+),
+);
+}
+
 final spots = buildSpots();
 final eventsList = getRecentEvents();
 final actions = getRecommendations();
 
 return Scaffold(
 backgroundColor: PLDesign.background,
-appBar: AppBar(title: const Text("Behavior Patterns")),
+appBar: AppBar(title: const Text("Custody Risk")),
 body: ListView(
 padding: const EdgeInsets.all(20),
 children: [

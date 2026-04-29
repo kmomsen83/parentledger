@@ -1,3 +1,6 @@
+import com.android.build.gradle.AppExtension
+import com.android.build.gradle.LibraryExtension
+
 allprojects {
     repositories {
         google()
@@ -15,6 +18,22 @@ subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
+
+// Ensure all Android modules (including plugin modules like `printing`) compile
+// against a modern SDK so resources such as android:attr/lStar are available.
+subprojects {
+    plugins.withId("com.android.application") {
+        extensions.configure<AppExtension>("android") {
+            compileSdkVersion(34)
+        }
+    }
+    plugins.withId("com.android.library") {
+        extensions.configure<LibraryExtension>("android") {
+            compileSdkVersion(34)
+        }
+    }
+}
+
 subprojects {
     project.evaluationDependsOn(":app")
 }

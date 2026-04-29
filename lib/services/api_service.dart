@@ -1,101 +1,91 @@
 import 'dart:convert';
+
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 class ApiService {
+  /// ⭐ CHANGE THIS ONLY
+  static const String baseUrl = "https://parentledger-api.onrender.com";
 
-/// ⭐ CHANGE THIS ONLY
-static const String baseUrl = "https://parentledger-api.onrender.com";
+  static String? token;
+  static dynamic currentUser;
 
-static String? token;
-static dynamic currentUser;
+  static Map<String, String> _headers() {
+    return {
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+      if (token != null) "Authorization": "Bearer $token",
+    };
+  }
 
-/// ⭐ HEADERS
-static Map<String, String> _headers() {
-return {
-"Content-Type": "application/json",
-"Accept": "application/json",
-if (token != null) "Authorization": "Bearer $token",
-};
-}
+  static Future<dynamic> login({
+    required String email,
+    required String password,
+  }) async {
+    final body = {
+      "email": email,
+      "password": password,
+    };
 
-/// ⭐ LOGIN
-static Future<dynamic> login({
-required String email,
-required String password,
-}) async {
+    final res = await http
+        .post(
+          Uri.parse("$baseUrl/auth/login"),
+          headers: _headers(),
+          body: jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 25));
 
-final body = {
-"email": email,
-"password": password,
-};
+    if (kDebugMode) {
+      debugPrint('login HTTP ${res.statusCode}');
+    }
 
-print("LOGIN BODY:");
-print(body);
+    if (res.statusCode == 200) {
+      final json = jsonDecode(res.body) as Map<String, dynamic>;
 
-final res = await http.post(
-Uri.parse("$baseUrl/auth/login"),
-headers: _headers(),
-body: jsonEncode(body),
-);
+      token = json["token"] ?? json["accessToken"] ?? json["jwt"];
+      currentUser = json["user"];
 
-print("LOGIN STATUS: ${res.statusCode}");
-print(res.body);
+      return json;
+    }
 
-if (res.statusCode == 200) {
+    throw Exception("LOGIN FAILED ${res.statusCode}");
+  }
 
-final json = jsonDecode(res.body);
+  static Future<dynamic> checkHealth() async {
+    final res = await http
+        .get(
+          Uri.parse("$baseUrl/health"),
+          headers: _headers(),
+        )
+        .timeout(const Duration(seconds: 20));
 
-/// ⭐ backend may OR may not return token
-token =
-json["token"] ??
-json["accessToken"] ??
-json["jwt"];
+    if (kDebugMode) {
+      debugPrint('health HTTP ${res.statusCode}');
+    }
 
-currentUser = json["user"];
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body);
+    }
 
-print("TOKEN:");
-print(token);
+    throw Exception("HEALTH FAILED ${res.statusCode}");
+  }
 
-return json;
-}
+  static Future<dynamic> fetchHistory() async {
+    final res = await http
+        .get(
+          Uri.parse("$baseUrl/history"),
+          headers: _headers(),
+        )
+        .timeout(const Duration(seconds: 25));
 
-throw Exception("LOGIN FAILED ${res.statusCode}");
-}
+    if (kDebugMode) {
+      debugPrint('history HTTP ${res.statusCode}');
+    }
 
-/// ⭐ HEALTH CHECK
-static Future<dynamic> checkHealth() async {
+    if (res.statusCode == 200) {
+      return jsonDecode(res.body);
+    }
 
-final res = await http.get(
-Uri.parse("$baseUrl/health"),
-headers: _headers(),
-);
-
-print("HEALTH STATUS: ${res.statusCode}");
-print(res.body);
-
-if (res.statusCode == 200) {
-return jsonDecode(res.body);
-}
-
-throw Exception("HEALTH FAILED ${res.statusCode}");
-}
-
-/// ⭐ FETCH HISTORY
-static Future<dynamic> fetchHistory() async {
-
-final res = await http.get(
-Uri.parse("$baseUrl/history"),
-headers: _headers(),
-);
-
-print("HISTORY STATUS: ${res.statusCode}");
-print(res.body);
-
-if (res.statusCode == 200) {
-return jsonDecode(res.body);
-}
-
-throw Exception("HISTORY FAILED ${res.statusCode}");
-}
-
+    throw Exception("HISTORY FAILED ${res.statusCode}");
+  }
 }

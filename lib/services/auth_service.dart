@@ -25,7 +25,7 @@ await ref.set({
 
 /// 🔥 ADD THIS HERE TOO
 "lastLogin": FieldValue.serverTimestamp(),
-});
+}, SetOptions(merge: true));
 } else {
 /// 🔥 EXISTING USER → UPDATE LAST LOGIN ONLY
 await ref.set({

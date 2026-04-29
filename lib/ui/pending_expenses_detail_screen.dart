@@ -1,222 +1,213 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:parentledger/l10n/context_l10n.dart';
 import 'package:flutter/material.dart';
-import 'package:parentledger/design/design.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 
+import '../design/design.dart';
+import '../providers/case_context.dart';
+import '../services/case_expense_service.dart';
+import 'approve_deny_expense_screen.dart';
+
+/// Lists unpaid case expenses with running total (Firestore-backed).
 class PendingExpensesDetailScreen extends StatelessWidget {
-const PendingExpensesDetailScreen({super.key});
+  const PendingExpensesDetailScreen({super.key});
 
-@override
-Widget build(BuildContext context) {
-return Scaffold(
-backgroundColor: PLDesign.background,
-body: Container(
-decoration: const BoxDecoration(
-gradient: PLDesign.pageGradient,
-),
-child: SafeArea(
-child: ListView(
-padding: const EdgeInsets.all(24),
-children: [
+  @override
+  Widget build(BuildContext context) {
+    final caseId = context.watch<CaseContext>().caseId;
+    final df = DateFormat.yMMMd();
 
-/// ⭐ HEADER
-Row(
-children: [
-IconButton(
-icon: const Icon(Icons.arrow_back_ios_new,
-color: Colors.white70),
-onPressed: () => Navigator.pop(context),
-),
-const SizedBox(width: 6),
-const Text(
-"Pending Expense",
-style: PLDesign.pageTitle,
-),
-],
-),
+    return Scaffold(
+      backgroundColor: PLDesign.background,
+      body: Container(
+        decoration: const BoxDecoration(gradient: PLDesign.pageGradient),
+        child: SafeArea(
+          child: caseId == null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'No case linked. Complete setup to view pending expenses.',
+                      style: PLDesign.body.copyWith(height: 1.4),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
+              : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: CaseExpenseService.watchExpenses(caseId),
+                  builder: (context, snap) {
+                    if (snap.hasError) {
+                      return Center(
+                        child: Text(
+                          '${snap.error}',
+                          style: PLDesign.body.copyWith(color: PLDesign.danger),
+                        ),
+                      );
+                    }
+                    if (snap.connectionState == ConnectionState.waiting &&
+                        !snap.hasData) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final docs = snap.data?.docs ?? [];
+                    final unpaid = docs.where((d) {
+                      final m = d.data();
+                      final paid = m['paid'] == true || m['status'] == 'paid';
+                      return !paid;
+                    }).toList();
 
-const SizedBox(height: 32),
+                    var total = 0.0;
+                    for (final d in unpaid) {
+                      final m = d.data();
+                      final a = m['amount'];
+                      if (a is num) {
+                        total += a.toDouble();
+                      } else {
+                        total += double.tryParse('$a') ?? 0;
+                      }
+                    }
 
-/// ⭐ EXPENSE CARD
-Container(
-padding: const EdgeInsets.all(22),
-decoration: PLDesign.elevatedCard,
-child: Column(
-crossAxisAlignment: CrossAxisAlignment.start,
-children: [
-
-const Text(
-"\$142.50",
-style: PLDesign.statNumber,
-),
-
-const SizedBox(height: 6),
-
-const Text(
-"Soccer Registration Fee",
-style: PLDesign.sectionTitle,
-),
-
-const SizedBox(height: 14),
-
-const Row(
-children: [
-Icon(Icons.calendar_today,
-size: 16,
-color: PLDesign.textMuted),
-SizedBox(width: 6),
-Text(
-"Submitted May 4",
-style: PLDesign.caption,
-)
-],
-),
-
-const SizedBox(height: 10),
-
-const Row(
-children: [
-Icon(Icons.person_outline,
-size: 16,
-color: PLDesign.textMuted),
-SizedBox(width: 6),
-Text(
-"Submitted by Co-Parent",
-style: PLDesign.caption,
-)
-],
-),
-
-const SizedBox(height: 18),
-
-Container(
-padding: const EdgeInsets.all(14),
-decoration: PLDesign.alertWarning,
-child: const Row(
-children: [
-Icon(Icons.schedule,
-color: PLDesign.warning,
-size: 18),
-SizedBox(width: 8),
-Expanded(
-child: Text(
-"Awaiting your approval",
-style: TextStyle(
-color: PLDesign.warning,
-fontWeight: FontWeight.w600,
-),
-),
-)
-],
-),
-)
-],
-),
-),
-
-const SizedBox(height: 30),
-
-/// ⭐ SPLIT CARD
-Container(
-padding: const EdgeInsets.all(22),
-decoration: PLDesign.elevatedCard,
-child: const Column(
-crossAxisAlignment: CrossAxisAlignment.start,
-children: [
-
-Text(
-"Expense Split",
-style: PLDesign.sectionTitle,
-),
-
-SizedBox(height: 16),
-
-Row(
-mainAxisAlignment:
-MainAxisAlignment.spaceBetween,
-children: [
-Text("Your Share", style: PLDesign.body),
-Text("\$71.25",
-style: TextStyle(
-color: Colors.white,
-fontWeight: FontWeight.w700))
-],
-),
-
-SizedBox(height: 10),
-
-Row(
-mainAxisAlignment:
-MainAxisAlignment.spaceBetween,
-children: [
-Text("Co-Parent Share",
-style: PLDesign.body),
-Text("\$71.25",
-style: TextStyle(
-color: Colors.white,
-fontWeight: FontWeight.w700))
-],
-),
-],
-),
-),
-
-const SizedBox(height: 34),
-
-/// ⭐ ACTIONS
-Row(
-children: [
-
-Expanded(
-child: GestureDetector(
-onTap: () {},
-child: Container(
-height: 56,
-decoration: BoxDecoration(
-borderRadius: PLDesign.r16,
-border: Border.all(
-color: PLDesign.danger),
-),
-child: const Center(
-child: Text(
-"Deny",
-style: TextStyle(
-color: PLDesign.danger,
-fontWeight: FontWeight.w700,
-),
-),
-),
-),
-),
-),
-
-const SizedBox(width: 16),
-
-Expanded(
-child: GestureDetector(
-onTap: () {},
-child: Container(
-height: 56,
-decoration: BoxDecoration(
-gradient: PLDesign.primaryGradient,
-borderRadius: PLDesign.r16,
-boxShadow: PLDesign.glowShadow,
-),
-child: const Center(
-child: Text(
-"Approve",
-style: PLDesign.buttonText,
-),
-),
-),
-),
-),
-],
-),
-
-const SizedBox(height: 40),
-],
-),
-),
-),
-);
-}
+                    return CustomScrollView(
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 8, 8, 16),
+                            child: Row(
+                              children: [
+                                IconButton(
+                                  icon: const Icon(Icons.arrow_back_ios_new,
+                                      color: Colors.white70),
+                                  onPressed: () => Navigator.pop(context),
+                                ),
+                                const Expanded(
+                                  child: Text(
+                                    'Pending expenses',
+                                    style: PLDesign.pageTitle,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24),
+                            child: Container(
+                              padding: const EdgeInsets.all(22),
+                              decoration: PLDesign.elevatedCard,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '\$${total.toStringAsFixed(2)}',
+                                    style: PLDesign.statNumber,
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    unpaid.isEmpty
+                                        ? 'No outstanding shared expenses'
+                                        : '${unpaid.length} unpaid entr${unpaid.length == 1 ? 'y' : 'ies'}',
+                                    style: PLDesign.caption,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        if (unpaid.isEmpty)
+                          SliverFillRemaining(
+                            hasScrollBody: false,
+                            child: Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(32),
+                                child: Text(
+                                  'All recorded expenses are marked paid, or none have been added yet.',
+                                  style: PLDesign.body.copyWith(height: 1.35),
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            ),
+                          )
+                        else
+                          SliverPadding(
+                            padding: const EdgeInsets.fromLTRB(20, 24, 20, 40),
+                            sliver: SliverList(
+                              delegate: SliverChildBuilderDelegate(
+                                (context, i) {
+                                  final doc = unpaid[i];
+                                  final m = doc.data();
+                                  final desc =
+                                      (m['description'] ?? 'Expense').toString();
+                                  final a = m['amount'];
+                                  final amt = a is num
+                                      ? a.toDouble()
+                                      : double.tryParse('$a') ?? 0.0;
+                                  final created = m['createdAt'];
+                                  String when = '—';
+                                  if (created is Timestamp) {
+                                    when = df.format(created.toDate());
+                                  }
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: Material(
+                                      color: PLDesign.card,
+                                      borderRadius: BorderRadius.circular(16),
+                                      child: ListTile(
+                                        contentPadding: const EdgeInsets.symmetric(
+                                          horizontal: 18,
+                                          vertical: 8,
+                                        ),
+                                        title: Row(
+                                          children: [
+                                            Expanded(
+                                              child: Text(
+                                                desc,
+                                                style: PLDesign.body.copyWith(
+                                                  fontWeight: FontWeight.w600,
+                                                ),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Text(
+                                              '\$${amt.toStringAsFixed(2)}',
+                                              style: PLDesign.body.copyWith(
+                                                fontWeight: FontWeight.w800,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        subtitle: Text(
+                                          'Recorded $when',
+                                          style: PLDesign.caption,
+                                        ),
+                                        trailing: TextButton(
+                                          onPressed: () async {
+                                            await Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (_) =>
+                                                    ApproveDenyExpenseScreen(
+                                                  expenseId: doc.id,
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                          child: Text(context.tTone('review')),
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                                childCount: unpaid.length,
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
+                ),
+        ),
+      ),
+    );
+  }
 }

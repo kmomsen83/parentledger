@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../design/design.dart';
+
 class AiDocumentTaggingScreen extends StatefulWidget {
 const AiDocumentTaggingScreen({super.key});
 
@@ -27,22 +29,12 @@ final tags = [
 Widget build(BuildContext context) {
 
 return Scaffold(
-backgroundColor: const Color(0xfff3f5fb),
+backgroundColor: PLDesign.background,
 
 appBar: AppBar(
-elevation: 0,
-backgroundColor: Colors.transparent,
-leading: IconButton(
-icon: const Icon(Icons.arrow_back, color: Color(0xff111827)),
-onPressed: () => Navigator.pop(context),
-),
-centerTitle: true,
+backgroundColor: PLDesign.surface,
 title: const Text(
-"AI Legal Tagging",
-style: TextStyle(
-color: Color(0xff111827),
-fontWeight: FontWeight.w800,
-),
+"AI Evidence Tagging",
 ),
 ),
 
@@ -63,13 +55,7 @@ Color(0xff1d4ed8),
 ],
 ),
 borderRadius: BorderRadius.circular(26),
-boxShadow: [
-BoxShadow(
-color: const Color(0xff4f46e5).withValues(alpha: .35),
-blurRadius: 30,
-offset: const Offset(0, 18),
-)
-],
+boxShadow: PLDesign.softShadow,
 ),
 child: const Row(
 children: [
@@ -91,6 +77,11 @@ height: 1.4,
 ),
 
 const SizedBox(height: 26),
+Text(
+'AI tagging suggestions are informational and should be reviewed before saving.',
+style: PLDesign.caption.copyWith(height: 1.35),
+),
+const SizedBox(height: 14),
 
 /// ⭐ DOCUMENT PREVIEW PANEL
 Container(
@@ -98,25 +89,15 @@ height: 240,
 width: double.infinity,
 decoration: BoxDecoration(
 borderRadius: BorderRadius.circular(26),
-gradient: const LinearGradient(
-colors: [
-Color(0xfff8fafc),
-Color(0xffeef2ff),
-],
-),
-boxShadow: [
-BoxShadow(
-color: Colors.black.withValues(alpha: .06),
-blurRadius: 30,
-offset: const Offset(0, 18),
-)
-],
+color: PLDesign.card,
+border: Border.all(color: PLDesign.border),
+boxShadow: PLDesign.softShadow,
 ),
 child: const Center(
 child: Icon(
 Icons.description_outlined,
 size: 70,
-color: Color(0xff4f46e5),
+color: PLDesign.primary,
 ),
 ),
 ),
@@ -127,8 +108,9 @@ const SizedBox(height: 28),
 Container(
 padding: const EdgeInsets.all(18),
 decoration: BoxDecoration(
-color: Colors.white,
+color: PLDesign.card,
 borderRadius: BorderRadius.circular(20),
+border: Border.all(color: PLDesign.border),
 ),
 child: Column(
 children: [
@@ -138,15 +120,16 @@ mainAxisAlignment:
 MainAxisAlignment.spaceBetween,
 children: [
 Text(
-"AI Confidence Score",
+"AI Tag Confidence",
 style: TextStyle(
 fontWeight: FontWeight.w700,
+color: Colors.white,
 ),
 ),
 Text(
 "87%",
 style: TextStyle(
-color: Color(0xff16a34a),
+color: PLDesign.success,
 fontWeight: FontWeight.w800,
 ),
 ),
@@ -160,8 +143,8 @@ borderRadius: BorderRadius.circular(10),
 child: const LinearProgressIndicator(
 value: .87,
 minHeight: 10,
-backgroundColor: Color(0xffe5e7eb),
-color: Color(0xff16a34a),
+backgroundColor: PLDesign.border,
+color: PLDesign.success,
 ),
 ),
 ],
@@ -233,7 +216,7 @@ t,
 style: TextStyle(
 color: selected
 ? Colors.white
-: const Color(0xff374151),
+: Colors.white70,
 fontWeight: FontWeight.w600,
 ),
 ),
@@ -250,34 +233,24 @@ Container(
 padding: const EdgeInsets.all(20),
 decoration: BoxDecoration(
 borderRadius: BorderRadius.circular(22),
-gradient: const LinearGradient(
-colors: [
-Color(0xffffffff),
-Color(0xfff8fafc),
-],
-),
-boxShadow: [
-BoxShadow(
-color: Colors.black.withValues(alpha: .05),
-blurRadius: 20,
-offset: const Offset(0, 12),
-)
-],
+color: PLDesign.card,
+border: Border.all(color: PLDesign.border),
+boxShadow: PLDesign.softShadow,
 ),
 child: const Row(
 children: [
-Icon(Icons.timeline,
-color: Color(0xff2563eb)),
+Icon(Icons.timeline, color: PLDesign.primary),
 SizedBox(width: 14),
 Expanded(
 child: Text(
 "Attach this document to custody timeline",
 style: TextStyle(
 fontWeight: FontWeight.w700,
+color: Colors.white,
 ),
 ),
 ),
-Icon(Icons.arrow_forward_ios, size: 16)
+Icon(Icons.arrow_forward_ios, size: 16, color: Colors.white54)
 ],
 ),
 ),
@@ -311,7 +284,7 @@ offset: const Offset(0, 10),
 ),
 child: const Center(
 child: Text(
-"Save to Legal Evidence",
+"Save Evidence Tags",
 style: TextStyle(
 color: Colors.white,
 fontWeight: FontWeight.w800,
@@ -330,7 +303,7 @@ onPressed: () => Navigator.pop(context),
 child: const Text(
 "Cancel",
 style: TextStyle(
-color: Colors.black45,
+color: Colors.white54,
 fontWeight: FontWeight.w600,
 ),
 ),

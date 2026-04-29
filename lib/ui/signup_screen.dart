@@ -1,228 +1,204 @@
 import 'package:flutter/material.dart';
+import 'package:parentledger/l10n/context_l10n.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:parentledger/design/design.dart';
 
 class SignupScreen extends StatefulWidget {
-const SignupScreen({super.key});
+  const SignupScreen({super.key});
 
-@override
-State<SignupScreen> createState() => _SignupScreenState();
+  @override
+  State<SignupScreen> createState() => _SignupScreenState();
 }
 
 class _SignupScreenState extends State<SignupScreen> {
-final firstName = TextEditingController();
-final lastName = TextEditingController();
-final emailController = TextEditingController();
+  final firstName = TextEditingController();
+  final lastName = TextEditingController();
+  final emailController = TextEditingController();
 
-String? role;
-bool loading = false;
+  String? parentType;
+  bool loading = false;
 
-/// ================================
-/// COMPLETE SIGNUP
-/// ================================
-Future<void> _completeSignup() async {
-if (loading) return;
+  InputDecoration _fieldDecoration(String hint) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: const TextStyle(color: Colors.white54),
+      filled: true,
+      fillColor: Colors.white.withValues(alpha: 0.08),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(22),
+        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(22),
+        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(22),
+        borderSide: const BorderSide(color: Color(0xff4f7cff), width: 1.2),
+      ),
+    );
+  }
 
-final user = FirebaseAuth.instance.currentUser;
+  /// Single border for role — no duplicate container wrapper.
+  InputDecoration get _roleDecoration {
+    return InputDecoration(
+      filled: true,
+      fillColor: Colors.white.withValues(alpha: 0.08),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(22),
+        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(22),
+        borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.15)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(22),
+        borderSide: const BorderSide(color: Color(0xff4f7cff), width: 1.2),
+      ),
+    );
+  }
 
-if (user == null) {
-_error("User not authenticated");
-return;
-}
+  Future<void> _completeSignup() async {
+    if (loading) return;
 
-if (firstName.text.trim().isEmpty ||
-lastName.text.trim().isEmpty ||
-role == null) {
-_error("Complete all fields");
-return;
-}
+    final user = FirebaseAuth.instance.currentUser;
 
-setState(() => loading = true);
+    if (user == null) {
+      _error('User not authenticated');
+      return;
+    }
 
-final db = FirebaseFirestore.instance;
+    if (firstName.text.trim().isEmpty ||
+        lastName.text.trim().isEmpty ||
+        parentType == null) {
+      _error('Complete all fields');
+      return;
+    }
 
-final userRef = db.collection("users").doc(user.uid);
-final caseRef = db.collection("cases").doc();
+    setState(() => loading = true);
 
-try {
-await userRef.set({
-"firstName": firstName.text.trim(),
-"lastName": lastName.text.trim(),
-"email": emailController.text.trim(),
-"phone": user.phoneNumber,
-"role": role,
-"caseId": caseRef.id,
-"onboardingStep": "profile_complete",
-"isPremium": false,
-"createdAt": FieldValue.serverTimestamp(),
-}, SetOptions(merge: true));
+    try {
+      final fn = FirebaseFunctions.instanceFor(region: 'us-central1');
+      final callable = fn.httpsCallable('completeSignup');
+      await callable.call(<String, dynamic>{
+        'firstName': firstName.text.trim(),
+        'lastName': lastName.text.trim(),
+        'email': emailController.text.trim(),
+        'parentType': parentType,
+      });
+    } on FirebaseFunctionsException catch (e) {
+      _error(e.message ?? 'Signup failed');
+    } catch (_) {
+      _error('Signup failed');
+    }
 
-await caseRef.set({
-"ownerId": user.uid,
-"memberIds": [user.uid],
-"createdAt": FieldValue.serverTimestamp(),
-});
+    if (!mounted) return;
+    setState(() => loading = false);
+  }
 
-await caseRef.collection("members").doc(user.uid).set({
-"role": role,
-"createdAt": FieldValue.serverTimestamp(),
-});
+  void _error(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+  }
 
-} catch (e) {
-_error("Signup failed");
-}
+  @override
+  void dispose() {
+    firstName.dispose();
+    lastName.dispose();
+    emailController.dispose();
+    super.dispose();
+  }
 
-if (!mounted) return;
-setState(() => loading = false);
-}
-
-void _error(String msg) {
-ScaffoldMessenger.of(context)
-.showSnackBar(SnackBar(content: Text(msg)));
-}
-
-@override
-void dispose() {
-firstName.dispose();
-lastName.dispose();
-emailController.dispose();
-super.dispose();
-}
-
-/// ================================
-/// UI
-/// ================================
-@override
-Widget build(BuildContext context) {
-return Scaffold(
-backgroundColor: Colors.transparent,
-body: Stack(
-children: [
-
-/// 🔥 BACKGROUND
-Container(decoration: PLDesign.screenGradient),
-
-SafeArea(
-child: SingleChildScrollView(
-padding: EdgeInsets.fromLTRB(
-24,
-24,
-24,
-MediaQuery.of(context).viewInsets.bottom + 24,
-),
-child: Column(
-crossAxisAlignment: CrossAxisAlignment.start,
-children: [
-
-const SizedBox(height: 20),
-
-/// TITLE
-const Text(
-"Create Account",
-style: TextStyle(
-fontSize: 34,
-fontWeight: FontWeight.w900,
-color: Colors.white,
-),
-),
-
-const SizedBox(height: 30),
-
-_inputField("First Name", firstName, capitalize: true),
-const SizedBox(height: 14),
-
-_inputField("Last Name", lastName, capitalize: true),
-const SizedBox(height: 14),
-
-_inputField(
-"Email (optional)",
-emailController,
-type: TextInputType.emailAddress,
-),
-
-const SizedBox(height: 20),
-
-/// 🔥 ROLE (FIXED STYLE — NO DOUBLE BUBBLE)
-_dropdownField(),
-
-const SizedBox(height: 40),
-
-/// CTA
-PLDesign.primaryButton(
-label: loading ? "Creating..." : "Continue",
-onTap: loading ? () {} : _completeSignup,
-),
-],
-),
-),
-),
-],
-),
-);
-}
-
-/// 🔥 CLEAN INPUT (MATCHES ENTRY SCREEN)
-Widget _inputField(
-String label,
-TextEditingController controller, {
-TextInputType type = TextInputType.text,
-bool capitalize = false,
-}) {
-return Container(
-decoration: BoxDecoration(
-color: Colors.white.withOpacity(.08),
-borderRadius: BorderRadius.circular(22),
-border: Border.all(
-color: Colors.white.withOpacity(.15),
-),
-),
-child: TextField(
-controller: controller,
-keyboardType: type,
-textCapitalization:
-capitalize ? TextCapitalization.words : TextCapitalization.none,
-style: const TextStyle(color: Colors.white),
-decoration: InputDecoration(
-hintText: label,
-hintStyle: const TextStyle(color: Colors.white54),
-border: InputBorder.none,
-contentPadding: const EdgeInsets.all(20),
-),
-),
-);
-}
-
-/// 🔥 FIXED DROPDOWN (NO DOUBLE CONTAINER)
-Widget _dropdownField() {
-return Container(
-decoration: BoxDecoration(
-color: Colors.white.withOpacity(.08),
-borderRadius: BorderRadius.circular(22),
-border: Border.all(
-color: Colors.white.withOpacity(.15),
-),
-),
-padding: const EdgeInsets.symmetric(horizontal: 16),
-child: DropdownButtonFormField<String>(
-initialValue: role,
-dropdownColor: const Color(0xff1c1f2e),
-hint: const Text(
-"Select Role",
-style: TextStyle(color: Colors.white70),
-),
-items: const [
-DropdownMenuItem(value: "Mom", child: Text("Mom")),
-DropdownMenuItem(value: "Dad", child: Text("Dad")),
-DropdownMenuItem(value: "Guardian", child: Text("Guardian")),
-],
-onChanged: (v) => setState(() => role = v),
-style: const TextStyle(color: Colors.white),
-decoration: const InputDecoration(
-border: InputBorder.none,
-),
-iconEnabledColor: Colors.white70,
-),
-);
-}
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Stack(
+        children: [
+          Container(decoration: PLDesign.screenGradient),
+          SafeArea(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                24,
+                24,
+                24,
+                MediaQuery.of(context).viewInsets.bottom + 24,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Create Account',
+                    style: TextStyle(
+                      fontSize: 34,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  TextField(
+                    controller: firstName,
+                    textCapitalization: TextCapitalization.words,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: _fieldDecoration('First name'),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: lastName,
+                    textCapitalization: TextCapitalization.words,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: _fieldDecoration('Last name'),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: emailController,
+                    keyboardType: TextInputType.emailAddress,
+                    style: const TextStyle(color: Colors.white),
+                    decoration: _fieldDecoration('Email (optional)'),
+                  ),
+                  const SizedBox(height: 14),
+                  InputDecorator(
+                    decoration: _roleDecoration,
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: parentType,
+                        isExpanded: true,
+                        dropdownColor: const Color(0xff1c1f2e),
+                        style: const TextStyle(color: Colors.white),
+                        iconEnabledColor: Colors.white70,
+                        hint: const Text(
+                          'Select role',
+                          style: TextStyle(color: Colors.white54),
+                        ),
+                        items: [
+                          DropdownMenuItem(
+                              value: 'mom', child: Text(context.tTone('mom'))),
+                          DropdownMenuItem(
+                              value: 'dad', child: Text(context.tTone('dad'))),
+                          DropdownMenuItem(
+                            value: 'guardian',
+                            child: Text(context.tTone('guardian')),
+                          ),
+                        ],
+                        onChanged: (v) => setState(() => parentType = v),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 40),
+                  PLDesign.primaryButton(
+                    label: loading ? 'Creating…' : 'Continue',
+                    onTap: loading ? () {} : _completeSignup,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

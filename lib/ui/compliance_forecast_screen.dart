@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'recent_activity_timeline_screen.dart';
 
 class ComplianceForecastScreen extends StatelessWidget {
 const ComplianceForecastScreen({super.key});
@@ -206,7 +207,14 @@ children: [
 
 Expanded(
 child: ElevatedButton(
-onPressed: () {},
+onPressed: () {
+Navigator.push(
+context,
+MaterialPageRoute(
+builder: (_) => const RecentActivityTimelineScreen(),
+),
+);
+},
 child: const Text(
 "Open Timeline Replay"),
 ),
@@ -216,7 +224,13 @@ const SizedBox(width: 12),
 
 Expanded(
 child: OutlinedButton(
-onPressed: () {},
+onPressed: () {
+ScaffoldMessenger.of(context).showSnackBar(
+const SnackBar(
+content: Text("Forecast export will be available in the export center soon."),
+),
+);
+},
 child: const Text(
 "Export Forecast"),
 ),

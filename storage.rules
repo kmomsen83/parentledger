@@ -1,0 +1,77 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    /// Case membership doc created by Cloud Functions (`caseId_uid`).
+    function caseMemberData(caseId) {
+      return firestore.get(
+        /databases/(default)/documents/caseMembers/$(caseId + '_' + request.auth.uid)
+      ).data;
+    }
+
+    /// Attorney (or linked counsel) access via `users/{uid}/cases/{caseId}`.
+    function attorneyCaseLink(caseId) {
+      return firestore.get(
+        /databases/(default)/documents/users/$(request.auth.uid)/cases/$(caseId)
+      ).data;
+    }
+
+    function caseDoc(caseId) {
+      return firestore.get(/databases/(default)/documents/cases/$(caseId)).data;
+    }
+
+    /// Aligns with Firestore `isParticipant`: arrays on case doc or primary `users.caseId`.
+    function participantViaCaseDoc(caseId) {
+      let c = caseDoc(caseId);
+      return c != null && (
+        request.auth.uid in c.get('memberIds', [])
+        || request.auth.uid in c.get('parents', [])
+        || request.auth.uid in c.get('participants', [])
+      );
+    }
+
+    function userPrimaryCase(caseId) {
+      let u = firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data;
+      return u != null && u.get('caseId', '') == caseId;
+    }
+
+    function canReadCaseStorage(caseId) {
+      return request.auth != null
+        && (
+          caseMemberData(caseId) != null
+          || attorneyCaseLink(caseId) != null
+          || participantViaCaseDoc(caseId)
+          || userPrimaryCase(caseId)
+        );
+    }
+
+    function canWriteCaseStorage(caseId) {
+      let cm = caseMemberData(caseId);
+      return request.auth != null && (
+        (
+          cm != null
+          && cm.get('permissions', {}).get('write', false) == true
+        )
+        || (
+          (participantViaCaseDoc(caseId) || userPrimaryCase(caseId))
+          && !(firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.get('role', 'parent') == 'attorney')
+        )
+      );
+    }
+
+    /// Case files: documents, exchange check-ins, child photos (multiple path styles).
+    match /cases/{caseId}/{allPaths=**} {
+      allow read: if canReadCaseStorage(caseId);
+      allow write: if canWriteCaseStorage(caseId)
+        && request.resource.size < 25 * 1024 * 1024;
+    }
+
+    /// User profile image (`profile_screen.dart` uses `profile_photos/$uid.jpg`).
+    match /profile_photos/{fileName} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null
+        && fileName == request.auth.uid + '.jpg'
+        && request.resource.size < 8 * 1024 * 1024;
+    }
+  }
+}

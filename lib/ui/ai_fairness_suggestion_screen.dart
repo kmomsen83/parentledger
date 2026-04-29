@@ -1,309 +1,175 @@
 import 'package:flutter/material.dart';
+import 'package:parentledger/l10n/context_l10n.dart';
+
+import '../design/design.dart';
 
 class AiFairnessSuggestionScreen extends StatelessWidget {
-const AiFairnessSuggestionScreen({super.key});
+  const AiFairnessSuggestionScreen({super.key});
 
-@override
-Widget build(BuildContext context) {
-return Scaffold(
-backgroundColor: const Color(0xfff3f5fb),
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: PLDesign.background,
+      appBar: AppBar(
+        title: Text(context.tTone('aiFairnessAnalysis')),
+        backgroundColor: PLDesign.surface,
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 10, 20, 28),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(22),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(22),
+                gradient: const LinearGradient(
+                  colors: [Color(0xff4f46e5), Color(0xff1d4ed8)],
+                ),
+                boxShadow: PLDesign.softShadow,
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.balance_rounded, color: Colors.white, size: 34),
+                  SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Overall Fairness Score',
+                          style: TextStyle(color: Colors.white70),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          '82%',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w900,
+                            fontSize: 32,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Based on recorded proposals and schedule events. Informational only, not legal advice.',
+              style: PLDesign.caption.copyWith(height: 1.35),
+            ),
+            const SizedBox(height: 20),
+            const Text('Parenting Time Distribution', style: PLDesign.sectionTitle),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: PLDesign.elevatedCard,
+              child: Column(
+                children: [
+                  _distRow('You', .54, PLDesign.info),
+                  const SizedBox(height: 16),
+                  _distRow('Other Parent', .46, PLDesign.ai),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text('AI Reasoning', style: PLDesign.sectionTitle),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: PLDesign.elevatedCard,
+              child: Text(
+                'Recent schedule proposals increased imbalance slightly. AI recommends redistributing one weekday overnight to maintain long-term fairness and reduce dispute risk.',
+                style: PLDesign.caption.copyWith(height: 1.4, color: PLDesign.textMuted),
+              ),
+            ),
+            const SizedBox(height: 20),
+            const Text('Suggested Compromise', style: PLDesign.sectionTitle),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                gradient: const LinearGradient(
+                  colors: [Color(0xff22c55e), Color(0xff15803d)],
+                ),
+              ),
+              child: const Text(
+                'Transfer Wednesday overnight exchange to other parent starting next week.',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 15,
+                  height: 1.35,
+                ),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(context.tTone('counterSuggestionFlowOpensFrom')),
+                        ),
+                      );
+                    },
+                    child: Text(context.tTone('counterSuggestion')),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(context.tTone('aiCompromiseSavedToReview')),
+                        ),
+                      );
+                    },
+                    child: Text(context.tTone('acceptAiProposal')),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
-appBar: AppBar(
-elevation: 0,
-backgroundColor: Colors.transparent,
-leading: IconButton(
-icon: const Icon(Icons.arrow_back, color: Color(0xff111827)),
-onPressed: () => Navigator.pop(context),
-),
-centerTitle: true,
-title: const Text(
-"AI Fairness Analysis",
-style: TextStyle(
-color: Color(0xff111827),
-fontWeight: FontWeight.w800,
-),
-),
-),
-
-body: SingleChildScrollView(
-padding: const EdgeInsets.fromLTRB(20, 10, 20, 30),
-child: Column(
-crossAxisAlignment: CrossAxisAlignment.start,
-children: [
-
-/// ⭐ FAIRNESS SCORE HERO
-Container(
-padding: const EdgeInsets.all(24),
-decoration: BoxDecoration(
-borderRadius: BorderRadius.circular(26),
-gradient: const LinearGradient(
-colors: [
-Color(0xff4f46e5),
-Color(0xff1d4ed8),
-],
-),
-boxShadow: [
-BoxShadow(
-color: const Color(0xff4f46e5).withValues(alpha: .35),
-blurRadius: 30,
-offset: const Offset(0, 18),
-)
-],
-),
-child: const Row(
-children: [
-Icon(Icons.balance_rounded,
-color: Colors.white, size: 36),
-SizedBox(width: 16),
-Expanded(
-child: Text(
-"Overall Fairness Score",
-style: TextStyle(
-color: Colors.white70,
-fontWeight: FontWeight.w600,
-),
-),
-),
-Text(
-"82%",
-style: TextStyle(
-color: Colors.white,
-fontWeight: FontWeight.w900,
-fontSize: 30,
-),
-)
-],
-),
-),
-
-const SizedBox(height: 28),
-
-/// ⭐ DISTRIBUTION PANEL
-const Text(
-"Parenting Time Distribution",
-style: TextStyle(
-fontWeight: FontWeight.w800,
-fontSize: 18,
-),
-),
-
-const SizedBox(height: 14),
-
-Container(
-padding: const EdgeInsets.all(20),
-decoration: BoxDecoration(
-borderRadius: BorderRadius.circular(22),
-gradient: const LinearGradient(
-colors: [
-Color(0xffffffff),
-Color(0xfff8fafc),
-],
-),
-boxShadow: [
-BoxShadow(
-color: Colors.black.withValues(alpha: .05),
-blurRadius: 22,
-offset: const Offset(0, 12),
-)
-],
-),
-child: Column(
-children: [
-
-_distRow("You", .54, const Color(0xff2563eb)),
-
-const SizedBox(height: 18),
-
-_distRow("Other Parent", .46, const Color(0xff7c3aed)),
-],
-),
-),
-
-const SizedBox(height: 26),
-
-/// ⭐ AI REASONING PANEL
-const Text(
-"AI Reasoning",
-style: TextStyle(
-fontWeight: FontWeight.w800,
-fontSize: 18,
-),
-),
-
-const SizedBox(height: 12),
-
-Container(
-padding: const EdgeInsets.all(20),
-decoration: BoxDecoration(
-borderRadius: BorderRadius.circular(22),
-color: Colors.white,
-boxShadow: [
-BoxShadow(
-color: Colors.black.withValues(alpha: .05),
-blurRadius: 20,
-offset: const Offset(0, 12),
-)
-],
-),
-child: const Text(
-"Recent schedule proposals increased imbalance slightly. "
-"AI recommends redistributing one weekday overnight "
-"to maintain long-term fairness and reduce dispute risk.",
-style: TextStyle(
-height: 1.6,
-fontWeight: FontWeight.w500,
-color: Color(0xff374151),
-),
-),
-),
-
-const SizedBox(height: 26),
-
-/// ⭐ SUGGESTED COMPROMISE HERO
-const Text(
-"Suggested Compromise",
-style: TextStyle(
-fontWeight: FontWeight.w800,
-fontSize: 18,
-),
-),
-
-const SizedBox(height: 12),
-
-Container(
-padding: const EdgeInsets.all(22),
-decoration: BoxDecoration(
-borderRadius: BorderRadius.circular(22),
-gradient: const LinearGradient(
-colors: [
-Color(0xff22c55e),
-Color(0xff15803d),
-],
-),
-boxShadow: [
-BoxShadow(
-color: const Color(0xff22c55e).withValues(alpha: .35),
-blurRadius: 20,
-offset: const Offset(0, 10),
-)
-],
-),
-child: const Text(
-"Transfer Wednesday overnight exchange "
-"to other parent starting next week.",
-style: TextStyle(
-color: Colors.white,
-fontWeight: FontWeight.w800,
-fontSize: 16,
-height: 1.4,
-),
-),
-),
-
-const SizedBox(height: 34),
-
-/// ⭐ ACTION BAR
-Row(
-children: [
-
-Expanded(
-child: Container(
-height: 60,
-decoration: BoxDecoration(
-borderRadius: BorderRadius.circular(18),
-color: Colors.white,
-border: Border.all(
-color: const Color(0xffe5e7eb),
-),
-),
-child: const Center(
-child: Text(
-"Counter Suggestion",
-style: TextStyle(
-fontWeight: FontWeight.w700,
-),
-),
-),
-),
-),
-
-const SizedBox(width: 14),
-
-Expanded(
-child: GestureDetector(
-onTap: () {
-Navigator.pop(context);
-},
-child: Container(
-height: 60,
-decoration: BoxDecoration(
-borderRadius: BorderRadius.circular(18),
-gradient: const LinearGradient(
-colors: [
-Color(0xff3b82f6),
-Color(0xff1d4ed8),
-],
-),
-boxShadow: [
-BoxShadow(
-color: const Color(0xff2563eb)
-.withValues(alpha: .4),
-blurRadius: 20,
-offset: const Offset(0, 10),
-)
-],
-),
-child: const Center(
-child: Text(
-"Accept AI Proposal",
-style: TextStyle(
-color: Colors.white,
-fontWeight: FontWeight.w800,
-),
-),
-),
-),
-),
-),
-],
-)
-],
-),
-),
-);
-}
-
-Widget _distRow(String label, double value, Color color) {
-return Column(
-children: [
-
-Row(
-mainAxisAlignment: MainAxisAlignment.spaceBetween,
-children: [
-Text(label,
-style: const TextStyle(
-fontWeight: FontWeight.w700,
-)),
-Text("${(value * 100).toInt()}%",
-style: TextStyle(
-fontWeight: FontWeight.w800,
-color: color,
-)),
-],
-),
-
-const SizedBox(height: 8),
-
-ClipRRect(
-borderRadius: BorderRadius.circular(10),
-child: LinearProgressIndicator(
-value: value,
-minHeight: 10,
-backgroundColor: const Color(0xffe5e7eb),
-color: color,
-),
-),
-],
-);
-}
+  Widget _distRow(String label, double value, Color color) {
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(label, style: PLDesign.body.copyWith(color: Colors.white)),
+            Text(
+              '${(value * 100).toInt()}%',
+              style: PLDesign.body.copyWith(
+                color: color,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: LinearProgressIndicator(
+            value: value,
+            minHeight: 10,
+            backgroundColor: PLDesign.border,
+            color: color,
+          ),
+        ),
+      ],
+    );
+  }
 }

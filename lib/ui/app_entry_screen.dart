@@ -17,7 +17,11 @@ final doc = await FirebaseFirestore.instance
 .doc(uid)
 .get();
 
-return doc.data() ?? {};
+final data = doc.data() ?? <String, dynamic>{};
+return <String, dynamic>{
+  '_exists': doc.exists,
+  ...data,
+};
 }
 
 @override
@@ -33,11 +37,16 @@ body: Center(child: CircularProgressIndicator()),
 }
 
 final data = snapshot.data as Map<String, dynamic>;
+final userDocExists = data['_exists'] == true;
 
 final hasCoParent = data["hasCoParent"] ?? false;
 final hasChild = data["hasChild"] ?? false;
 
 /// 🚨 ROUTING LOGIC
+if (!userDocExists) {
+return const WorkspaceCoparentSetupScreen();
+}
+
 if (!hasCoParent) {
 return const WorkspaceCoparentSetupScreen();
 }

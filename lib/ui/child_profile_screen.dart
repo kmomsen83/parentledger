@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:ui';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -121,13 +122,15 @@ if (!mounted) return;
 ScaffoldMessenger.of(context).showSnackBar(
 const SnackBar(content: Text("Photo updated")),
 );
-} catch (e) {
-debugPrint("❌ Upload error: $e");
+} catch (_) {
+      if (kDebugMode) {
+        debugPrint("Upload failed");
+      }
 
-ScaffoldMessenger.of(context).showSnackBar(
-const SnackBar(content: Text("Upload failed")),
-);
-}
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Upload failed")),
+      );
+    }
 
 if (mounted) {
 setState(() => uploading = false);

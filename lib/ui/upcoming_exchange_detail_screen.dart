@@ -1,11 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/exchange_model.dart';
-import '../../services/exchange_service.dart';
-import '../../providers/case_context.dart';
 import '../../design/design.dart';
 
 import 'exchange_checkin_screen.dart';
@@ -47,59 +44,6 @@ const SnackBar(content: Text("Error opening maps")),
 }
 
 /// ================================
-/// 🗑 DELETE (CONFIRMED)
-/// ================================
-Future<void> deleteExchange(BuildContext context) async {
-final confirm = await showDialog<bool>(
-context: context,
-builder: (_) => AlertDialog(
-title: const Text("Delete Exchange"),
-content: const Text(
-"Are you sure you want to delete this exchange?",
-),
-actions: [
-TextButton(
-onPressed: () => Navigator.pop(context, false),
-child: const Text("Cancel"),
-),
-TextButton(
-onPressed: () => Navigator.pop(context, true),
-child: const Text("Delete"),
-),
-],
-),
-);
-
-if (confirm != true) return;
-
-final caseId =
-Provider.of<CaseContext>(context, listen: false).caseId;
-
-if (caseId == null) return;
-
-try {
-await ExchangeService.deleteExchange(
-caseId: caseId,
-exchangeId: exchange.id,
-);
-
-if (!context.mounted) return;
-
-Navigator.pop(context);
-
-ScaffoldMessenger.of(context).showSnackBar(
-const SnackBar(content: Text("Exchange deleted")),
-);
-} catch (_) {
-if (context.mounted) {
-ScaffoldMessenger.of(context).showSnackBar(
-const SnackBar(content: Text("Failed to delete")),
-);
-}
-}
-}
-
-/// ================================
 /// ⏱ ACTIVE CHECK (IMPORTANT)
 /// ================================
 bool get isActive {
@@ -121,12 +65,6 @@ return Scaffold(
 backgroundColor: PLDesign.background,
 appBar: AppBar(
 title: const Text("Exchange Details"),
-actions: [
-IconButton(
-icon: const Icon(Icons.delete),
-onPressed: () => deleteExchange(context),
-)
-],
 ),
 body: ListView(
 padding: const EdgeInsets.all(20),
@@ -202,13 +140,8 @@ context,
 MaterialPageRoute(
 builder: (_) =>
 ExchangeCheckinScreen(
-exchangeId: exchange.id,
-scheduledTime:
-exchange.scheduledTime,
-exchangeLat: exchange.lat,
-exchangeLng: exchange.lng,
-locationName:
-exchange.locationName,
+caseId: exchange.caseId,
+scheduledExchange: exchange,
 ),
 ),
 );

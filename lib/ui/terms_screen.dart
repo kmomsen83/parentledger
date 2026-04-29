@@ -1,137 +1,223 @@
 import 'package:flutter/material.dart';
+import 'package:parentledger/l10n/context_l10n.dart';
+import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 
-class TermsScreen extends StatelessWidget {
-const TermsScreen({super.key});
+import '../design/design.dart';
+import '../onboarding/onboarding_steps.dart';
 
-@override
-Widget build(BuildContext context) {
-return Scaffold(
-backgroundColor: const Color(0xff0f172a),
-appBar: AppBar(
-title: const Text("Terms & Privacy"),
-backgroundColor: Colors.transparent,
-elevation: 0,
-),
-body: SafeArea(
-child: Column(
-children: [
-const Expanded(
-child: SingleChildScrollView(
-padding: EdgeInsets.all(24),
-child: Text(
-_termsText,
-style: TextStyle(
-color: Colors.white70,
-fontSize: 14,
-height: 1.5,
-),
-),
-),
-),
+/// In-app terms: load from [assets/legal/terms_of_service.md], with embedded fallback.
+class TermsScreen extends StatefulWidget {
+  const TermsScreen({super.key});
 
-Padding(
-padding: const EdgeInsets.all(20),
-child: GestureDetector(
-onTap: () {
-Navigator.pop(context, true);
-},
-child: Container(
-height: 60,
-decoration: BoxDecoration(
-borderRadius: BorderRadius.circular(28),
-gradient: const LinearGradient(
-colors: [
-Color(0xff76c3ff),
-Color(0xff3d7cff),
-],
-),
-),
-child: const Center(
-child: Text(
-"I Agree",
-style: TextStyle(
-fontSize: 18,
-fontWeight: FontWeight.w800,
-),
-),
-),
-),
-),
-)
-],
-),
-),
-);
-}
+  @override
+  State<TermsScreen> createState() => _TermsScreenState();
 }
 
-const String _termsText = """
+class _TermsScreenState extends State<TermsScreen> {
+  final ScrollController _scroll = ScrollController();
 
-PARENTLEDGER TERMS OF SERVICE & PRIVACY SUMMARY
+  bool _hasScrolledToBottom = false;
+  bool _accepted = false;
+  bool _loading = false;
+  bool _loadingBody = true;
+  String _markdown = _fallbackTermsMarkdown;
 
-Effective Use of Platform
+  @override
+  void initState() {
+    super.initState();
+    _loadTerms();
+    _scroll.addListener(_onScroll);
+  }
 
-ParentLedger provides tools to help co-parents document custody events, communicate, and organize shared parenting responsibilities.
+  Future<void> _loadTerms() async {
+    try {
+      final s = await rootBundle.loadString('assets/legal/terms_of_service.md');
+      if (mounted) {
+        setState(() {
+          _markdown = s;
+          _loadingBody = false;
+        });
+        _scheduleScrollFitCheck();
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _loadingBody = false);
+        _scheduleScrollFitCheck();
+      }
+    }
+  }
 
-ParentLedger is NOT a legal service, law firm, mediation provider, therapist, or custody authority.
+  /// If the markdown fits on screen, there is nothing to scroll — treat as "read".
+  void _scheduleScrollFitCheck() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scroll.hasClients) return;
+      final pos = _scroll.position;
+      if (pos.maxScrollExtent <= 32 && !_hasScrolledToBottom) {
+        setState(() => _hasScrolledToBottom = true);
+      }
+    });
+  }
 
-Users remain solely responsible for all parenting decisions and legal actions.
+  void _onScroll() {
+    if (!_scroll.hasClients) return;
+    final pos = _scroll.position;
+    if (pos.pixels >= pos.maxScrollExtent - 32) {
+      if (!_hasScrolledToBottom) {
+        setState(() => _hasScrolledToBottom = true);
+      }
+    }
+  }
 
-Attorney & Professional Viewer Access
+  Future<void> _accept() async {
+    if (!_canSubmit || _loading) return;
 
-Users may grant viewing access to attorneys, mediators, therapists, court professionals, or other third parties.
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
 
-ParentLedger does not verify the identity, credentials, or authority of invited viewers.
+    setState(() => _loading = true);
 
-Users assume full responsibility for granting and revoking access.
+    try {
+      await FirebaseFirestore.instance.collection('users').doc(user.uid).set(
+        {
+          'termsAccepted': true,
+          'termsAcceptedAt': FieldValue.serverTimestamp(),
+          'onboardingStep': OnboardingSteps.profileComplete,
+        },
+        SetOptions(merge: true),
+      );
 
-Information Accuracy & Evidence Use
+      // Router rebuilds from Firestore snapshot (no stack to pop).
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.tTone('couldNotSavePleaseTry'))),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
 
-ParentLedger does not guarantee the accuracy, completeness, or admissibility of any records created within the platform.
+  bool get _canSubmit => _accepted && _hasScrolledToBottom;
 
-Exported logs and reports are user-generated content.
+  @override
+  void dispose() {
+    _scroll.removeListener(_onScroll);
+    _scroll.dispose();
+    super.dispose();
+  }
 
-ParentLedger is not responsible for how records are interpreted, used, or presented in legal proceedings.
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: PLDesign.background,
+      appBar: AppBar(
+        title: Text(context.tTone('termsPrivacy')),
+        backgroundColor: PLDesign.surface,
+        foregroundColor: PLDesign.textPrimary,
+        elevation: 0,
+      ),
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
+              child: Text(
+                _hasScrolledToBottom
+                    ? 'Review the agreement below, then accept to continue.'
+                    : 'Scroll to the bottom to enable acceptance.',
+                style: PLDesign.caption.copyWith(color: PLDesign.textMuted, height: 1.35),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: Scrollbar(
+                controller: _scroll,
+                thumbVisibility: true,
+                child: _loadingBody
+                    ? const Center(child: CircularProgressIndicator())
+                    : SingleChildScrollView(
+                        controller: _scroll,
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                        child: MarkdownBody(
+                          data: _markdown,
+                          selectable: true,
+                          styleSheet:
+                              MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                            p: const TextStyle(
+                              color: Colors.white70,
+                              height: 1.45,
+                              fontSize: 14,
+                            ),
+                            h1: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                            ),
+                            h2: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            listBullet: const TextStyle(color: Colors.white70),
+                          ),
+                        ),
+                      ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Checkbox(
+                    value: _accepted,
+                    onChanged: _hasScrolledToBottom
+                        ? (v) => setState(() => _accepted = v ?? false)
+                        : null,
+                    activeColor: PLDesign.primary,
+                  ),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Text(
+                        'I agree to the Terms & Privacy Policy',
+                        style: TextStyle(
+                          color: _hasScrolledToBottom ? Colors.white70 : PLDesign.textMuted,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+              child: Opacity(
+                opacity: _canSubmit ? 1 : 0.45,
+                child: PLDesign.primaryButton(
+                  label: _loading ? 'Saving…' : 'Accept & continue',
+                  onTap: _canSubmit && !_loading ? _accept : () {},
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
-Third-Party Sharing & Screenshots
+const String _fallbackTermsMarkdown = '''
+# ParentLedger Terms of Service & Privacy
 
-Users may export or share platform content outside the application.
+ParentLedger provides tools for co-parents to document events and manage shared responsibilities. ParentLedger is **not** a law firm or legal advisor.
 
-ParentLedger is not liable for:
+Subscriptions are processed by Apple App Store and Google Play. See in-app purchase screens for renewal and cancellation.
 
-• screenshots
-• forwarded messages
-• redistributed custody records
-• unauthorized disclosure
-
-Professional Conduct
-
-Users agree not to use ParentLedger for harassment, threats, manipulation, or abuse.
-
-Accounts may be suspended or terminated for misuse.
-
-Subscription & Billing
-
-ParentLedger may offer paid subscriptions.
-
-Failure to maintain an active subscription may limit platform features.
-
-Data Storage & Security
-
-ParentLedger uses commercially reasonable safeguards but cannot guarantee absolute security.
-
-Limitation of Liability
-
-To the maximum extent permitted by law, ParentLedger shall not be liable for indirect, emotional, legal, financial, or consequential damages arising from platform use.
-
-Dispute Resolution
-
-Users agree to binding arbitration and waive class-action rights where legally permitted.
-
-Account Termination
-
-ParentLedger may suspend or terminate accounts at its discretion to protect platform integrity.
-
-By using ParentLedger you agree to these terms.
-
-""";
+By accepting, you agree to these terms and to our handling of data as described in the app and store listings.
+''';

@@ -1,7 +1,12 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:parentledger/design/design.dart';
-
-import 'generating_export_screen.dart';
+import 'package:parentledger/providers/case_context.dart';
+import 'package:parentledger/services/case_switcher_service.dart';
+import 'package:parentledger/services/legal_export_service.dart';
+import 'package:parentledger/ui/legal_export_preview_screen.dart';
+import 'package:parentledger/ui/widgets/parent_upgrade_prompt.dart';
 
 class CourtCaseExportScreen extends StatefulWidget {
 const CourtCaseExportScreen({super.key});
@@ -40,7 +45,7 @@ aiNarrative;
 /// ================================
 /// GENERATE EXPORT
 /// ================================
-void generateExport() {
+Future<void> generateExport() async {
 if (!canGenerate) {
 ScaffoldMessenger.of(context).showSnackBar(
 const SnackBar(
@@ -50,14 +55,62 @@ content: Text("Select at least one module"),
 return;
 }
 
+final session = context.read<CaseContext>();
+if (!session.isAttorney && !session.unlockedParentPremiumFeatures) {
+  await showParentUpgradePrompt(
+    context,
+    title: 'Upgrade for court exports',
+    message:
+        'Full bundle exports and court-formatted reports are included with ParentLedger Pro.',
+  );
+  return;
+}
+final caseId = session.isAttorney
+    ? (context.read<CaseSwitcherService>().selectedCaseId ?? session.caseId)
+    : session.caseId;
+if (caseId == null || caseId.isEmpty) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('No case selected. Open a case and try again.')),
+  );
+  return;
+}
+
 setState(() => isGenerating = true);
 
-Navigator.push(
-context,
-MaterialPageRoute(
-builder: (_) => const GeneratingExportScreen(),
-),
-);
+try {
+  final service = LegalExportService();
+  final doc = await service.generateCourtBundle(
+    caseId: caseId,
+    includeTimeline: timeline,
+    includeParenting: parenting,
+    includeExpenses: expenses,
+    includeMessages: messages,
+    includeViolations: violations,
+    includeAiNarrative: aiNarrative,
+  );
+  if (!mounted) return;
+  final watermarked = session.isAttorney;
+  await Navigator.push<void>(
+    context,
+    MaterialPageRoute<void>(
+      builder: (_) => LegalExportPreviewScreen(
+        document: doc,
+        watermarked: watermarked,
+      ),
+    ),
+  );
+} catch (e, st) {
+  if (kDebugMode) {
+    debugPrint('Court export failed: $e\n$st');
+  }
+  if (mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Could not build export: $e')),
+    );
+  }
+} finally {
+  if (mounted) setState(() => isGenerating = false);
+}
 }
 
 /// ================================
@@ -231,7 +284,11 @@ PLDesign.primaryButton(
 label: isGenerating
 ? "Generating..."
 : "Generate Court Report",
-onTap: generateExport,
+onTap: isGenerating
+    ? () {}
+    : () {
+        generateExport();
+      },
 ),
 ],
 );

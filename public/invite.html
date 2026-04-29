@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Open ParentLedger Invite</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 680px; margin: 0 auto; padding: 24px; line-height: 1.45; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 18px; margin-top: 18px; }
+    .btn { display: inline-block; padding: 10px 14px; border-radius: 8px; background: #2f63f6; color: #fff; text-decoration: none; margin-right: 8px; }
+  </style>
+</head>
+<body>
+  <h1>Opening your ParentLedger invite...</h1>
+  <div class="card">
+    <p id="status">Preparing secure invite handoff.</p>
+    <a id="openApp" class="btn" href="#">Open in App</a>
+    <a id="openStore" class="btn" href="#">Install App</a>
+  </div>
+  <script>
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      const inviteId = (params.get('id') || params.get('inviteId') || '').trim();
+      const status = document.getElementById('status');
+      const openApp = document.getElementById('openApp');
+      const openStore = document.getElementById('openStore');
+
+      if (!inviteId) {
+        status.textContent = 'Invite link is invalid or missing.';
+        openApp.style.display = 'none';
+        return;
+      }
+
+      localStorage.setItem('parentledger_pending_invite_id', inviteId);
+      const appLink = `parentledger://invite?id=${encodeURIComponent(inviteId)}`;
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      const storeLink = isIOS
+        ? 'https://apps.apple.com/us/search?term=ParentLedger'
+        : 'https://play.google.com/store/apps/details?id=com.parentledger.app';
+
+      openApp.href = appLink;
+      openStore.href = storeLink;
+
+      status.textContent = 'Trying to open the app. If it does not open, install ParentLedger and then re-open this invite.';
+
+      const started = Date.now();
+      window.location.href = appLink;
+
+      setTimeout(() => {
+        const elapsed = Date.now() - started;
+        if (elapsed < 2500) {
+          window.location.href = storeLink;
+        }
+      }, 1300);
+    })();
+  </script>
+</body>
+</html>
+

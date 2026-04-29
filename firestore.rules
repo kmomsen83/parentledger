@@ -1,0 +1,615 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isSelf(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function userRef() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
+    function userDocExists() {
+      return signedIn() && exists(userRef());
+    }
+
+    function userData() {
+      return get(userRef()).data;
+    }
+
+    function userCaseId() {
+      return userDocExists() ? userData().get('caseId', '') : '';
+    }
+
+    function isAttorney() {
+      return userDocExists() && userData().get('role', 'parent') == 'attorney';
+    }
+
+    function casePath(caseId) {
+      return /databases/$(database)/documents/cases/$(caseId);
+    }
+
+    function caseExists(caseId) {
+      return exists(casePath(caseId));
+    }
+
+    function caseData(caseId) {
+      return get(casePath(caseId)).data;
+    }
+
+    /// Prefer memberIds, then legacy parents (same idea as FirestoreFields.readCaseMemberIds).
+    function coMemberIds(data) {
+      let m = data.get('memberIds', []);
+      return m.size() > 0 ? m : data.get('parents', []);
+    }
+
+    /// Canonical participant list on [cases]. Use explicit `participants` when set;
+    /// otherwise memberIds / legacy parents.
+    function caseParticipantIds(caseId) {
+      let data = caseData(caseId);
+      let p = data.get('participants', []);
+      return p.size() > 0 ? p : coMemberIds(data);
+    }
+
+    /// True if the signed-in user belongs to this case (participant array, or user doc caseId,
+    /// or explicit caseMembers/{caseId_uid} link). Always requires auth + case exists.
+    function isParticipant(caseId) {
+      return signedIn()
+        && caseExists(caseId)
+        && (
+          request.auth.uid in caseParticipantIds(caseId)
+          || (userDocExists() && userCaseId() == caseId)
+          || exists(/databases/$(database)/documents/caseMembers/$(caseId + "_" + request.auth.uid))
+        );
+    }
+
+    /// Attorneys linked to a matter via `users/{uid}/cases/{caseId}` (doc id = case id) must be
+    /// able to read case-scoped ledger queries even when `users.caseId` still points elsewhere.
+    function isAttorneyLinkedToCase(caseId) {
+      return signedIn()
+        && userDocExists()
+        && userData().get('role', 'parent') == 'attorney'
+        && caseExists(caseId)
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid)/cases/$(caseId));
+    }
+
+    /// Read access for immutable ledger + overlays (timeline, exports).
+    function ledgerCaseRead(caseId) {
+      return isParticipant(caseId) || isAttorneyLinkedToCase(caseId);
+    }
+
+    function ledgerEventDocumentRead() {
+      return resource.data.keys().hasAll(['caseId'])
+        && resource.data.caseId is string
+        && ledgerCaseRead(resource.data.caseId);
+    }
+
+    /// Read/mutate case-scoped data only for authenticated participants.
+    function canAccessCase(caseId) {
+      return signedIn()
+        && userDocExists()
+        && isParticipant(caseId);
+    }
+
+    function canMutateCaseData(caseId) {
+      return canAccessCase(caseId) && !isAttorney();
+    }
+
+    function isUnexpiredInvite(inviteData) {
+      return !('expiresAt' in inviteData) || inviteData.expiresAt is timestamp && inviteData.expiresAt > request.time;
+    }
+
+    function validExpenseStatus(status) {
+      return status in ['unpaid', 'paid', 'denied', 'pending'];
+    }
+
+    function validExpenseCreateShape() {
+      return request.resource.data.amount is number
+        && request.resource.data.amount > 0
+        && request.resource.data.description is string
+        && request.resource.data.description.size() > 0
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.paid is bool
+        && validExpenseStatus(request.resource.data.status)
+        && (
+          (request.resource.data.paid == true && request.resource.data.status == 'paid')
+          || (request.resource.data.paid == false && request.resource.data.status in ['unpaid', 'denied', 'pending'])
+        );
+    }
+
+    function validExpenseUpdateShape() {
+      return request.resource.data.amount == resource.data.amount
+        && request.resource.data.description == resource.data.description
+        && request.resource.data.createdBy == resource.data.createdBy
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.paid is bool
+        && validExpenseStatus(request.resource.data.status)
+        && (
+          (request.resource.data.paid == true && request.resource.data.status == 'paid')
+          || (request.resource.data.paid == false && request.resource.data.status in ['unpaid', 'denied', 'pending'])
+        );
+    }
+
+    function expenseMutableKeysOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['paid', 'status', 'updatedAt']);
+    }
+
+    /// Case thread message body + sender + time are immutable after create.
+    function caseThreadMessageMutableKeysOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['isRead', 'tags', 'important', 'markedAsEvidence']);
+    }
+
+    function validCaseThreadMessageCreate() {
+      return request.resource.data.senderId == request.auth.uid
+        && request.resource.data.senderId is string
+        && request.resource.data.type == 'text'
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 12000
+        && request.resource.data.immutable == true
+        && request.resource.data.keys().hasAll(['senderId', 'createdAt', 'text', 'type', 'immutable'])
+        && request.resource.data.keys().hasOnly([
+          'senderId',
+          'createdAt',
+          'text',
+          'type',
+          'immutable',
+          'editedAt',
+          'isRead',
+          'attachments',
+          'tags',
+          'legalFlag',
+          'important',
+          'markedAsEvidence',
+        ]);
+    }
+
+    function caseConversationEnvelopeMutableKeysOnly() {
+      return request.resource.data.diff(resource.data).affectedKeys()
+        .hasOnly(['caseId', 'title', 'memberIds', 'lastMessagePreview', 'lastSenderId', 'updatedAt']);
+    }
+
+    // -------------------------------------------------------------------------
+    // caseInvites
+    // -------------------------------------------------------------------------
+
+    function intendedRecipient(data) {
+      return data.get('intendedRecipient', {});
+    }
+
+    function inviteMatchesCurrentUser(data) {
+      let intended = intendedRecipient(data);
+      let intendedUserId = intended.get('userId', '');
+      let intendedEmail = intended.get('email', '');
+      let intendedPhone = intended.get('phone', '');
+      let authEmail = request.auth.token.email != null ? request.auth.token.email : '';
+      let authPhone = request.auth.token.phone_number != null ? request.auth.token.phone_number : '';
+      return (intendedUserId != '' && intendedUserId == request.auth.uid)
+        || (intendedEmail != '' && authEmail != '' && intendedEmail == authEmail)
+        || (intendedPhone != '' && authPhone != '' && intendedPhone == authPhone);
+    }
+
+    match /caseInvites/{inviteId} {
+      allow get, list: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.caseId is string
+        && isParticipant(request.resource.data.caseId)
+        && request.resource.data.role in ['coparent', 'attorney']
+        && request.resource.data.token is string
+        && request.resource.data.token.size() >= 20
+        && request.resource.data.maxUses is int
+        && request.resource.data.maxUses >= 1
+        && request.resource.data.uses == 0
+        && request.resource.data.expiresAt is timestamp
+        && request.resource.data.expiresAt > request.time;
+
+      /// Status / use counters can only be changed by callable backend.
+      allow update, delete: if false;
+    }
+
+    match /invites/{inviteId} {
+      allow read: if signedIn()
+        && (
+          resource.data.fromUserId == request.auth.uid
+          || inviteMatchesCurrentUser(resource.data)
+        );
+      allow create, update, delete: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // users
+    // -------------------------------------------------------------------------
+
+    match /users/{userId} {
+      allow read: if isSelf(userId);
+      // isPremium is server-managed only (RevenueCat webhook / Admin SDK). Client may never set true.
+      allow create: if isSelf(userId)
+        && request.resource.data.get('isPremium', false) == false
+        && request.resource.data.get('role', 'parent') == 'parent'
+        && request.resource.data.get('parentType', 'mom') in ['mom', 'dad', 'guardian']
+        && request.resource.data.get('accessLevel', 'free') in ['free', 'subscription']
+        && request.resource.data.get('subscriptionTier', 'free') in ['free', 'pro'];
+      allow update: if isSelf(userId)
+        && request.resource.data.get('isPremium', false) == resource.data.get('isPremium', false)
+        && request.resource.data.get('role', 'parent') == resource.data.get('role', 'parent')
+        && request.resource.data.get('parentType', 'mom') == resource.data.get('parentType', 'mom')
+        && request.resource.data.get('accessLevel', 'free') == resource.data.get('accessLevel', 'free')
+        && request.resource.data.get('subscriptionTier', 'free') == resource.data.get('subscriptionTier', 'free')
+        && request.resource.data.get('caseId', '') == resource.data.get('caseId', '')
+        && request.resource.data.get('mergeFromCaseId', '') == resource.data.get('mergeFromCaseId', '');
+      allow delete: if false;
+
+      /// Attorney (and future multi-case) links under the user profile.
+      /// Must be readable by that user only — [CaseSwitcherService] listens here for
+      /// every signed-in account (parents typically have an empty collection).
+      match /cases/{caseLinkId} {
+        allow read: if isSelf(userId);
+        allow create, update, delete: if false;
+      }
+    }
+
+    match /caseMembers/{id} {
+      allow read: if signedIn()
+        && (
+          resource.data.userId == request.auth.uid
+          || canAccessCase(resource.data.caseId)
+        );
+      allow create, update, delete: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // cases
+    // -------------------------------------------------------------------------
+
+    match /cases/{caseId} {
+      allow read: if canAccessCase(caseId);
+
+      allow create: if false;
+
+      allow update: if signedIn()
+        && canMutateCaseData(caseId)
+        && request.resource.data.get('memberIds', []) == resource.data.get('memberIds', [])
+        && request.resource.data.get('parents', []) == resource.data.get('parents', []);
+
+      allow delete: if false;
+
+      match /members/{memberId} {
+        allow read: if canAccessCase(caseId);
+        allow create, update, delete: if canMutateCaseData(caseId);
+      }
+
+      match /participants/{pid} {
+        allow read: if canAccessCase(caseId);
+        allow write: if canMutateCaseData(caseId);
+      }
+
+      match /children/{childId} {
+        allow read: if canAccessCase(caseId);
+        allow write: if canMutateCaseData(caseId);
+
+        match /timeline/{tid} {
+          allow read: if canAccessCase(caseId);
+          allow create: if canMutateCaseData(caseId);
+          allow update, delete: if false;
+        }
+      }
+
+      match /conversations/{cid} {
+        allow read: if canAccessCase(caseId);
+        allow create: if canMutateCaseData(caseId);
+        allow update: if canMutateCaseData(caseId)
+          && caseConversationEnvelopeMutableKeysOnly();
+        allow delete: if false;
+
+        match /messages/{mid} {
+          allow read: if canAccessCase(caseId);
+          allow create: if canMutateCaseData(caseId)
+            && validCaseThreadMessageCreate();
+          allow update: if canMutateCaseData(caseId)
+            && caseThreadMessageMutableKeysOnly();
+          allow delete: if false;
+        }
+      }
+
+      match /timeline/{eid} {
+        allow read: if canAccessCase(caseId);
+        allow create: if canMutateCaseData(caseId);
+        allow update, delete: if false;
+      }
+
+      match /insights/{docId} {
+        allow read: if canAccessCase(caseId);
+        allow write: if canMutateCaseData(caseId);
+      }
+
+      match /expenses/{eid} {
+        allow read: if canAccessCase(caseId);
+        /// Created only via Cloud Function [createCaseExpense] (free-tier quota enforced server-side).
+        allow create: if false;
+        allow update: if canMutateCaseData(caseId)
+          && expenseMutableKeysOnly()
+          && validExpenseUpdateShape();
+        allow delete: if false;
+      }
+
+      match /exchanges/{eid} {
+        allow read: if canAccessCase(caseId);
+        allow create, update: if canMutateCaseData(caseId);
+        allow delete: if false;
+
+        match /timeline/{tid} {
+          allow read: if canAccessCase(caseId);
+          allow create: if canMutateCaseData(caseId);
+          allow update, delete: if false;
+        }
+      }
+
+      match /exchange_checkins/{cid} {
+        allow read: if canAccessCase(caseId);
+        allow create: if canMutateCaseData(caseId);
+        allow update, delete: if false;
+      }
+
+      match /legalSummaries/{sid} {
+        allow read: if canAccessCase(caseId);
+        allow create: if canMutateCaseData(caseId);
+        allow update, delete: if false;
+      }
+
+      match /documents/{docId} {
+        allow read: if canAccessCase(caseId);
+        allow create: if canMutateCaseData(caseId);
+        allow update, delete: if false;
+      }
+
+      match /recurring_patterns/{rid} {
+        allow read: if canAccessCase(caseId);
+        allow write: if canMutateCaseData(caseId);
+      }
+
+      match /events/{eid} {
+        allow read: if canAccessCase(caseId);
+        allow create: if canMutateCaseData(caseId);
+        allow update, delete: if false;
+      }
+
+      match /violations/{vid} {
+        allow read: if canAccessCase(caseId);
+        allow write: if canMutateCaseData(caseId);
+      }
+
+      match /locations/{lid} {
+        allow read: if canAccessCase(caseId);
+        allow create: if canMutateCaseData(caseId)
+          && request.resource.data.createdBy == request.auth.uid;
+        allow update, delete: if false;
+      }
+    }
+
+    /// Legacy unified timeline rows — **append-only from Cloud Functions** (use logCaseEvent).
+    match /caseEvents/{eventId} {
+      allow read: if isParticipant(resource.data.caseId);
+      allow create, update, delete: if false;
+    }
+
+    /// Tamper-resistant ledger — server writes only (Admin SDK / Cloud Functions).
+    match /case_events/{eventId} {
+      allow read: if ledgerEventDocumentRead();
+      allow create, update, delete: if false;
+    }
+
+    match /case_events_meta/{caseId} {
+      allow read: if ledgerCaseRead(caseId);
+      allow create, update, delete: if false;
+    }
+
+    /// Evidence tags and UI overlays — does not alter immutable ledger documents.
+    match /case_event_annotations/{docId} {
+      allow read: if signedIn() && ledgerCaseRead(resource.data.caseId);
+      allow create: if signedIn()
+        && ledgerCaseRead(request.resource.data.caseId)
+        && request.resource.data.eventId is string
+        && request.resource.data.tags is list;
+      allow update: if signedIn()
+        && ledgerCaseRead(resource.data.caseId)
+        && request.resource.data.caseId == resource.data.caseId
+        && request.resource.data.eventId == resource.data.eventId
+        && request.resource.data.tags is list;
+      allow delete: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // Top-level conversations — DISABLED (canonical path: cases/.../conversations).
+    // Cloud Functions may still use Admin SDK to migrate or notify legacy rows.
+    // -------------------------------------------------------------------------
+
+    match /conversations/{convId} {
+      allow read, write: if false;
+
+      match /messages/{mid} {
+        allow read, write: if false;
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // riskEvents — documents must include userId == auth.uid
+    // -------------------------------------------------------------------------
+
+    match /riskEvents/{id} {
+      allow read: if signedIn() && resource.data.userId == request.auth.uid;
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.keys().hasAll(['userId', 'type', 'timestamp']);
+      allow update, delete: if false;
+    }
+
+    // -------------------------------------------------------------------------
+    // User-scoped legacy collections (distinct from cases/.../documents)
+    // -------------------------------------------------------------------------
+
+    /// Co-parent negotiation proposals (`caseId` + `createdBy`). Any case participant may
+    /// update status/terms; [createdBy] is immutable. Messages are append-only while terms are open.
+    match /proposals/{proposalId} {
+      function proposalUpdateAllowed() {
+        let cur = resource.data.status;
+        let next = request.resource.data.status;
+        return (!(cur in ['finalized', 'rejected']))
+          || (cur == 'accepted' && next == 'finalized');
+      }
+
+      function proposalOpenForMessages() {
+        return get(/databases/$(database)/documents/proposals/$(proposalId)).data.status in ['pending', 'negotiating'];
+      }
+
+      allow read: if signedIn()
+        && resource.data.keys().hasAll(['caseId', 'createdBy', 'status', 'title'])
+        && resource.data.caseId is string
+        && ledgerCaseRead(resource.data.caseId);
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasAll([
+          'caseId',
+          'childId',
+          'childName',
+          'kind',
+          'title',
+          'createdBy',
+          'status',
+          'createdAt',
+          'originalData',
+          'proposedData',
+        ])
+        && request.resource.data.caseId is string
+        && request.resource.data.childName is string
+        && request.resource.data.kind is string
+        && request.resource.data.kind in ['schedule', 'expense', 'location']
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.title is string
+        && request.resource.data.originalData is map
+        && request.resource.data.proposedData is map
+        && ledgerCaseRead(request.resource.data.caseId);
+
+      allow update: if signedIn()
+        && resource.data.caseId == request.resource.data.caseId
+        && request.resource.data.createdBy == resource.data.createdBy
+        && ledgerCaseRead(resource.data.caseId)
+        && proposalUpdateAllowed()
+        && request.resource.data.status is string
+        && request.resource.data.status in [
+          'pending',
+          'negotiating',
+          'accepted',
+          'rejected',
+          'finalized',
+        ];
+
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if signedIn()
+          && get(/databases/$(database)/documents/proposals/$(proposalId)).data.caseId is string
+          && ledgerCaseRead(get(/databases/$(database)/documents/proposals/$(proposalId)).data.caseId);
+
+        allow create: if signedIn()
+          && proposalOpenForMessages()
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 12000
+          && request.resource.data.keys().hasAll(['senderId', 'text', 'createdAt'])
+          && get(/databases/$(database)/documents/proposals/$(proposalId)).data.caseId is string
+          && ledgerCaseRead(get(/databases/$(database)/documents/proposals/$(proposalId)).data.caseId);
+
+        allow update, delete: if false;
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // ai_cache — per-user AI callable results (SHA256 inputHash, doc id scoped)
+    // -------------------------------------------------------------------------
+
+    match /ai_cache/{docId} {
+      function validAiCacheCreate() {
+        let t = request.resource.data.type;
+        return signedIn()
+          && request.resource.data.userId == request.auth.uid
+          && t in ['summary', 'fairness', 'compliance', 'tone']
+          && request.resource.data.inputHash is string
+          && request.resource.data.inputHash.size() > 0
+          && request.resource.data.inputHash.size() <= 128
+          && request.resource.data.result is map
+          && request.resource.data.createdAt is timestamp
+          && docId == request.auth.uid + '_' + t + '_' + request.resource.data.inputHash;
+      }
+
+      // Single-doc reads + narrow queries: allow read when doc is missing (cache miss) or owned.
+      // Using `read` (not `get` only) so list queries that return only the caller's rows can succeed.
+      allow read: if signedIn()
+        && (
+          !exists(/databases/$(database)/documents/ai_cache/$(docId))
+          || resource.data.userId == request.auth.uid
+        );
+      allow create: if validAiCacheCreate();
+      allow update, delete: if false;
+    }
+
+    match /messages/{id} {
+      allow read: if signedIn() && resource.data.userId == request.auth.uid;
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if signedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    match /expenses/{id} {
+      allow read: if signedIn() && resource.data.userId == request.auth.uid;
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if signedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    match /documents/{id} {
+      allow read: if signedIn() && resource.data.userId == request.auth.uid;
+      allow create: if signedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if signedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    // -------------------------------------------------------------------------
+    // Top-level legal summaries (CustodyRiskScreen)
+    // -------------------------------------------------------------------------
+
+    match /legalSummaries/{id} {
+      allow read: if signedIn() && resource.data.createdBy == request.auth.uid;
+      allow create: if signedIn()
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    match /feedback/{id} {
+      allow read: if signedIn() && resource.data.userId == request.auth.uid;
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    match /notifications/{userId} {
+      allow read: if signedIn() && userId == request.auth.uid;
+      allow write: if false;
+
+      match /items/{notificationId} {
+        allow read: if signedIn() && userId == request.auth.uid;
+        allow create: if signedIn()
+          && userId == request.auth.uid;
+        allow update: if signedIn() && userId == request.auth.uid;
+        allow delete: if false;
+      }
+    }
+  }
+}

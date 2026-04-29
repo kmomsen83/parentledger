@@ -66,5 +66,34 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSContactsUsageDescription</key>
+	<string>ParentLedger needs contacts access to fill in a phone number when you invite a co-parent or professional.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>ParentLedger uses the camera for profile photos, exchange check-ins, and evidence capture.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>ParentLedger needs photo library access to attach evidence and choose profile images.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>ParentLedger saves generated and exported records to your photo library when requested.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>ParentLedger uses location during exchange check-ins and navigation assistance.</string>
+	<key>GMSApiKey</key>
+	<string>$(GOOGLE_MAPS_API_KEY)</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.parentledger.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>parentledger</string>
+			</array>
+		</dict>
+	</array>
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:parentledger.app</string>
+	</array>
 </dict>
 </plist>

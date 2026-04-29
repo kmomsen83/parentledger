@@ -76,8 +76,12 @@ final caseId = data["caseId"];
 final inviteRef = await db.collection("caseInvites").add({
 "fromUserId": user.uid,
 "toPhone": normalized,
+"role": "coparent",
 "status": "pending",
 "caseId": caseId,
+"expiresAt": Timestamp.fromDate(
+DateTime.now().add(const Duration(days: 30)),
+),
 "createdAt": FieldValue.serverTimestamp(),
 });
 
@@ -99,8 +103,7 @@ const SnackBar(content: Text("Invite sent")),
 
 phoneController.clear();
 
-} catch (e) {
-print("❌ INVITE ERROR: $e");
+} catch (_) {
 _error("Failed to send invite");
 }
 

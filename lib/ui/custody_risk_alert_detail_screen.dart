@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:parentledger/l10n/context_l10n.dart';
 import 'package:parentledger/design/design.dart';
 
 class CustodyRiskAlertDetailScreen extends StatelessWidget {
@@ -68,7 +69,7 @@ return Scaffold(
 backgroundColor: PLDesign.background,
 
 appBar: AppBar(
-title: const Text("Custody Risk Alert"),
+title: Text(context.tTone('caseComplianceAlert')),
 backgroundColor: PLDesign.surface,
 ),
 
@@ -106,7 +107,7 @@ crossAxisAlignment:
 CrossAxisAlignment.start,
 children: [
 Text(
-"High Violation Risk",
+'High compliance concern',
 style:
 TextStyle(color: Colors.white70),
 ),
@@ -129,7 +130,7 @@ color: Colors.white,
 const SizedBox(height: 26),
 
 const Text(
-"Risk Drivers",
+'Compliance factors',
 style: PLDesign.sectionTitle,
 ),
 

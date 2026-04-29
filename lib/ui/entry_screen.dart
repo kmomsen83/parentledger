@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import '../app_router.dart';
 import 'accept_invite_screen.dart';
-import '../design/design.dart';
+import 'login_screen.dart';
 
 class EntryScreen extends StatefulWidget {
 final String? inviteId;
@@ -15,35 +16,32 @@ State<EntryScreen> createState() => _EntryScreenState();
 
 class _EntryScreenState extends State<EntryScreen> {
 bool checking = true;
+bool _ctaPressed = false;
 
 @override
 void initState() {
 super.initState();
-handleEntry();
+_handleEntry();
 }
 
-/// 🔥 MAIN ENTRY LOGIC
-Future<void> handleEntry() async {
+/// =====================================
+/// 🔥 MAIN ENTRY FLOW (PRODUCTION SAFE)
+/// =====================================
+Future<void> _handleEntry() async {
 final user = FirebaseAuth.instance.currentUser;
 
-/// ⏳ small delay for smooth UX
-await Future.delayed(const Duration(milliseconds: 300));
+await Future.delayed(const Duration(milliseconds: 250));
 
 if (!mounted) return;
 
-/// ================================
-/// 🔥 CASE 1: USER NOT LOGGED IN
-/// ================================
+/// 🔒 NOT LOGGED IN → SHOW UI
 if (user == null) {
 setState(() => checking = false);
 return;
 }
 
-/// ================================
-/// 🔥 CASE 2: USER LOGGED IN
-/// ================================
+/// 🔗 INVITE FLOW
 if (widget.inviteId != null) {
-/// 🚀 go accept invite
 Navigator.pushReplacement(
 context,
 MaterialPageRoute(
@@ -54,47 +52,70 @@ AcceptInviteScreen(inviteId: widget.inviteId!),
 return;
 }
 
-/// 🚀 normal app flow
-Navigator.pushReplacementNamed(context, "/router");
+  /// Signed in without a pending invite: route into app shell.
+  if (!mounted) return;
+  Navigator.pushReplacement(
+    context,
+    MaterialPageRoute(
+      builder: (_) => const AppRouter(),
+    ),
+  );
+  return;
 }
 
-/// 🔥 CALLED AFTER LOGIN / SIGNUP
-void onAuthSuccess() {
-if (widget.inviteId != null) {
-Navigator.pushReplacement(
-context,
-MaterialPageRoute(
-builder: (_) =>
-AcceptInviteScreen(inviteId: widget.inviteId!),
-),
+/// =====================================
+/// 🔥 LOGIN NAVIGATION
+/// =====================================
+Future<void> _startLogin() async {
+await Navigator.push(
+  context,
+  MaterialPageRoute(
+    builder: (_) => const LoginScreen(),
+  ),
 );
-} else {
-Navigator.pushReplacementNamed(context, "/router");
-}
+if (!mounted) return;
+await _handleEntry();
 }
 
+/// =====================================
+/// UI
+/// =====================================
 @override
 Widget build(BuildContext context) {
 return Scaffold(
 body: Stack(
 children: [
 
-/// 🔥 BACKGROUND
-Container(decoration: PLDesign.screenGradient),
+/// 🔥 PREMIUM BACKGROUND IMAGE
+Positioned.fill(
+child: Image.asset(
+"lib/design/premium_entry_screen_background.png",
+fit: BoxFit.cover,
+),
+),
+
+/// 🔥 DARK OVERLAY (CRITICAL FOR TEXT READABILITY)
+Positioned.fill(
+child: Container(
+color: Colors.black.withOpacity(0.55),
+),
+),
 
 SafeArea(
 child: Center(
 child: checking
-? const CircularProgressIndicator()
-: Column(
+? const CircularProgressIndicator(color: Colors.white)
+: Padding(
+padding: const EdgeInsets.symmetric(horizontal: 28),
+child: Column(
 mainAxisAlignment: MainAxisAlignment.center,
 children: [
 
-/// 🔥 TITLE
+/// 🔥 APP NAME
 const Text(
 "ParentLedger",
 style: TextStyle(
-fontSize: 34,
+fontSize: 36,
 fontWeight: FontWeight.w900,
 color: Colors.white,
 ),
@@ -102,54 +123,85 @@ color: Colors.white,
 
 const SizedBox(height: 10),
 
+/// 🔥 TAGLINE
 const Text(
 "Custody. Clarity. Peace.",
-style: TextStyle(color: Colors.white70),
+style: TextStyle(
+color: Colors.white70,
+fontSize: 14,
+),
 ),
 
-const SizedBox(height: 40),
+const SizedBox(height: 50),
 
-/// 🔥 LOGIN BUTTON
-_button(
+Listener(
+onPointerDown: (_) => setState(() => _ctaPressed = true),
+onPointerUp: (_) => setState(() => _ctaPressed = false),
+onPointerCancel: (_) => setState(() => _ctaPressed = false),
+child: AnimatedScale(
+scale: _ctaPressed ? 0.98 : 1.0,
+duration: const Duration(milliseconds: 100),
+curve: Curves.easeOut,
+child: Material(
+color: Colors.transparent,
+child: InkWell(
+onTap: _startLogin,
+borderRadius: BorderRadius.circular(30),
+splashColor: Colors.white.withValues(alpha: 0.2),
+highlightColor: Colors.white.withValues(alpha: 0.1),
+child: Ink(
+height: 56,
+width: double.infinity,
+decoration: BoxDecoration(
+borderRadius: BorderRadius.circular(30),
+gradient: const LinearGradient(
+colors: [
+Color(0xff76c3ff),
+Color(0xff3d7cff),
+],
+),
+boxShadow: [
+BoxShadow(
+color: Color(0xff3d7cff).withValues(alpha: 0.3),
+blurRadius: 16,
+offset: Offset(0, 8),
+),
+],
+),
+child: const Center(
+child: Text(
 "Continue with Phone",
-() async {
-/// 🔥 YOUR PHONE AUTH FLOW HERE
-/// After success:
-onAuthSuccess();
-},
+style: TextStyle(
+fontSize: 18,
+fontWeight: FontWeight.w800,
+color: Colors.white,
+letterSpacing: 0.3,
+),
+),
+),
+),
+),
+),
+),
 ),
 
-const SizedBox(height: 16),
+const SizedBox(height: 20),
 
-/// 🔥 DEBUG (optional remove later)
+/// 🔗 INVITE STATE
 if (widget.inviteId != null)
 const Text(
-"Joining a workspace...",
-style: TextStyle(color: Colors.white54),
+"Joining a shared workspace...",
+style: TextStyle(
+color: Colors.white54,
+fontSize: 12,
+),
 ),
 ],
 ),
 ),
 ),
+),
 ],
-),
-);
-}
-
-/// 🔥 BUTTON
-Widget _button(String text, VoidCallback onTap) {
-return GestureDetector(
-onTap: onTap,
-child: Container(
-width: 260,
-height: 56,
-decoration: BoxDecoration(
-gradient: PLDesign.primaryGradient,
-borderRadius: BorderRadius.circular(20),
-),
-child: Center(
-child: Text(text, style: PLDesign.buttonText),
-),
 ),
 );
 }
