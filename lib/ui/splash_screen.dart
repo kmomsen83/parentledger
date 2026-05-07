@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 
 import '../app_router.dart'; // 🔥 IMPORTANT
-import '../services/invite_link_service.dart';
 
 class SplashScreen extends StatefulWidget {
 const SplashScreen({super.key});
@@ -67,9 +66,7 @@ if (!mounted) return;
 Navigator.pushReplacement(
 context,
 PageRouteBuilder(
-pageBuilder: (_, __, ___) => AppRouter(
-  inviteId: InviteLinkService.pendingInviteId.value,
-),
+pageBuilder: (_, __, ___) => const AppRouter(),
 transitionDuration: const Duration(milliseconds: 500),
 transitionsBuilder: (_, animation, __, child) {
 return FadeTransition(

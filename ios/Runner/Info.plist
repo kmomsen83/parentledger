@@ -91,9 +91,5 @@
 			</array>
 		</dict>
 	</array>
-	<key>com.apple.developer.associated-domains</key>
-	<array>
-		<string>applinks:parentledger.app</string>
-	</array>
 </dict>
 </plist>

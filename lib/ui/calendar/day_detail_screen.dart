@@ -1,12 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:parentledger/l10n/context_l10n.dart';
+import 'package:provider/provider.dart';
 import '../../design/design.dart';
 import '../../models/case_event.dart';
+import '../../models/custody_schedule_rule.dart';
 import '../../services/case_event_service.dart';
+import '../../models/holiday.dart';
+import '../../providers/holiday_provider.dart' show holidayEmojiForName;
+import '../../services/custody_schedule_generator.dart';
+import '../../services/custody_schedule_service.dart';
+import '../../services/holiday_service.dart';
 import '../../services/timeline_actor_resolver.dart';
+import '../../providers/case_context.dart';
+import '../conversation_thread_screen.dart';
 import '../documents_library_screen.dart';
-import '../messages_inbox_screen.dart';
 import '../proposals/create_proposal_screen.dart';
+import '../widgets/premium_upgrade_sheet.dart';
+import '../../services/case_messaging_service.dart';
 
 /// Calendar day hub: quick actions plus an immutable audit list for that date.
 class DayDetailScreen extends StatelessWidget {
@@ -66,8 +77,18 @@ class DayDetailScreen extends StatelessWidget {
             ),
           ),
           Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: _CustodyDayScheduleCard(
+              caseId: caseId,
+              selectedDate: selectedDate,
+            ),
+          ),
+          Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: _DayActionPanel(selectedDate: selectedDate),
+            child: _DayActionPanel(
+              caseId: caseId,
+              selectedDate: selectedDate,
+            ),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
@@ -90,13 +111,292 @@ class DayDetailScreen extends StatelessWidget {
   }
 }
 
-class _DayActionPanel extends StatelessWidget {
-  const _DayActionPanel({required this.selectedDate});
+class _CustodyDayScheduleCard extends StatelessWidget {
+  const _CustodyDayScheduleCard({
+    required this.caseId,
+    required this.selectedDate,
+  });
 
+  final String caseId;
+  final DateTime selectedDate;
+
+  static DateTime _dayOnly(DateTime d) =>
+      DateTime(d.year, d.month, d.day);
+
+  static String _roleLabel(String? uid, CustodyScheduleRule rule) {
+    if (uid == null || uid.isEmpty) return '—';
+    if (uid == rule.parentAUserId) return 'Parent A';
+    if (uid == rule.parentBUserId) return 'Parent B';
+    return uid;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final session = context.watch<CaseContext>();
+    final scheduleLocked =
+        !session.isAttorney && !session.unlockedParentPremiumFeatures;
+
+    return StreamBuilder<List<Holiday>>(
+      stream: HolidayService.watchHolidaysForMonth(caseId, selectedDate),
+      builder: (context, holSnap) {
+        final holidays = holSnap.data ?? [];
+        final day = _dayOnly(selectedDate);
+        Holiday? holiday;
+        for (final h in holidays) {
+          if (_dayOnly(h.dateLocal) == day) {
+            holiday = h;
+            break;
+          }
+        }
+
+        return StreamBuilder<CustodyScheduleRule>(
+          stream: CustodyScheduleService.watchRule(caseId),
+          builder: (context, rs) {
+            final rule = rs.data ?? CustodyScheduleRule.empty;
+            return StreamBuilder<Map<DateTime, String>>(
+              stream: CustodyScheduleService.watchOverrides(caseId),
+              builder: (context, os) {
+                final overrides = os.data ?? {};
+
+                if (!rule.isConfigured) {
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: PLDesign.surface,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: PLDesign.border),
+                ),
+                child: Text(
+                  'No repeating custody schedule yet. From Monthly Calendar, '
+                  'tap “Set custody schedule” to define your pattern.',
+                  style: PLDesign.caption.copyWith(height: 1.35),
+                ),
+              );
+            }
+
+            final scheduleEffective = CustodyScheduleGenerator.expand(
+              rule: rule,
+              rangeStart: day,
+              rangeEnd: day,
+              overrides: overrides,
+            )[day];
+
+            final effective = holiday != null
+                ? holiday.assignedParentId
+                : scheduleEffective;
+
+            final overrideUid = overrides[day];
+            String dropValue;
+            if (overrideUid == null) {
+              dropValue = 'schedule';
+            } else if (overrideUid == rule.parentAUserId) {
+              dropValue = 'a';
+            } else if (overrideUid == rule.parentBUserId) {
+              dropValue = 'b';
+            } else {
+              dropValue = 'schedule';
+            }
+
+            return Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: PLDesign.card,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: PLDesign.border),
+                boxShadow: PLDesign.softShadow,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.home_work_outlined,
+                        color: PLDesign.primary,
+                        size: 22,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Custody this day',
+                          style: PLDesign.sectionTitle.copyWith(fontSize: 16),
+                        ),
+                      ),
+                      if (holiday != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: PLDesign.primary.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            'Holiday',
+                            style: PLDesign.caption.copyWith(
+                              color: PLDesign.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        )
+                      else if (overrideUid != null)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
+                          decoration: BoxDecoration(
+                            color: PLDesign.warning.withValues(alpha: 0.2),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            'Override',
+                            style: PLDesign.caption.copyWith(
+                              color: PLDesign.warning,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  if (holiday != null) ...[
+                    Row(
+                      children: [
+                        Text(
+                          holidayEmojiForName(holiday.name),
+                          style: const TextStyle(fontSize: 20),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            holiday.name,
+                            style: PLDesign.body.copyWith(
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  Text(
+                    _roleLabel(effective, rule),
+                    style: PLDesign.body.copyWith(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 17,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    holiday != null
+                        ? 'Holiday custody (overrides schedule & day overrides)'
+                        : 'Manual override',
+                    style: PLDesign.caption.copyWith(color: PLDesign.textMuted),
+                  ),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<String>(
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: PLDesign.surface,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: PLDesign.border),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: PLDesign.border),
+                      ),
+                    ),
+                    value: dropValue,
+                    items: const [
+                      DropdownMenuItem(
+                        value: 'schedule',
+                        child: Text('Follow repeating schedule'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'a',
+                        child: Text('Force Parent A'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'b',
+                        child: Text('Force Parent B'),
+                      ),
+                    ],
+                    onChanged: holiday != null
+                        ? null
+                        : scheduleLocked
+                            ? (_) {
+                                showPremiumUpgradeSheet(
+                                  context,
+                                  feature:
+                                      DashboardPremiumFeature.calendarScheduling,
+                                );
+                              }
+                            : (v) async {
+                                if (v == null) return;
+                                try {
+                                  if (v == 'schedule') {
+                                    await CustodyScheduleService.clearDayOverride(
+                                      caseId: caseId,
+                                      localDay: day,
+                                    );
+                                  } else if (v == 'a') {
+                                    await CustodyScheduleService.setDayOverride(
+                                      caseId: caseId,
+                                      localDay: day,
+                                      assignedParentUserId: rule.parentAUserId,
+                                    );
+                                  } else {
+                                    await CustodyScheduleService.setDayOverride(
+                                      caseId: caseId,
+                                      localDay: day,
+                                      assignedParentUserId: rule.parentBUserId,
+                                    );
+                                  }
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Custody preference saved'),
+                                    ),
+                                  );
+                                } catch (e) {
+                                  if (!context.mounted) return;
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(content: Text('Could not save: $e')),
+                                  );
+                                }
+                              },
+                  ),
+                ],
+              ),
+            );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _DayActionPanel extends StatelessWidget {
+  const _DayActionPanel({
+    required this.caseId,
+    required this.selectedDate,
+  });
+
+  final String caseId;
   final DateTime selectedDate;
 
   @override
   Widget build(BuildContext context) {
+    final session = context.watch<CaseContext>();
+    final workflowLocked =
+        !session.isAttorney && !session.unlockedParentPremiumFeatures;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -121,6 +421,13 @@ class _DayActionPanel extends StatelessWidget {
             icon: Icons.swap_horiz_rounded,
             label: 'Propose exchange',
             onTap: () {
+              if (workflowLocked) {
+                showPremiumUpgradeSheet(
+                  context,
+                  feature: DashboardPremiumFeature.proposals,
+                );
+                return;
+              }
               Navigator.push<void>(
                 context,
                 MaterialPageRoute<void>(
@@ -137,6 +444,13 @@ class _DayActionPanel extends StatelessWidget {
             icon: Icons.payments_outlined,
             label: 'Add expense',
             onTap: () {
+              if (workflowLocked) {
+                showPremiumUpgradeSheet(
+                  context,
+                  feature: DashboardPremiumFeature.expenseLedger,
+                );
+                return;
+              }
               Navigator.push<void>(
                 context,
                 MaterialPageRoute<void>(
@@ -153,10 +467,17 @@ class _DayActionPanel extends StatelessWidget {
             icon: Icons.chat_bubble_outline_rounded,
             label: 'Send message',
             onTap: () {
+              final draft =
+                  'Regarding ${DateFormat.yMMMd().format(selectedDate)}:\n\n';
               Navigator.push<void>(
                 context,
                 MaterialPageRoute<void>(
-                  builder: (_) => const MessagesInboxScreen(),
+                  builder: (_) => ConversationThreadScreen(
+                    title: context.tTone('messages'),
+                    caseId: caseId,
+                    conversationId: CaseMessagingService.defaultConversationId,
+                    initialComposerText: draft,
+                  ),
                 ),
               );
             },
@@ -166,6 +487,13 @@ class _DayActionPanel extends StatelessWidget {
             icon: Icons.cloud_upload_outlined,
             label: 'Upload document',
             onTap: () {
+              if (workflowLocked) {
+                showPremiumUpgradeSheet(
+                  context,
+                  feature: DashboardPremiumFeature.documentsLibrary,
+                );
+                return;
+              }
               Navigator.push<void>(
                 context,
                 MaterialPageRoute<void>(

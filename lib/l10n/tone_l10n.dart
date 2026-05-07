@@ -15,7 +15,6 @@ String t(
   UiTone? toneOverride,
 ]) {
   final loc = AppLocalizations.of(context);
-  final tone =
-      toneOverride ?? Provider.of<TonePreference>(context, listen: false).tone;
+  final tone = toneOverride ?? context.read<TonePreference>().tone;
   return toneString(loc, key, tone);
 }

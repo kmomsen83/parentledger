@@ -53,6 +53,9 @@ class CaseEvent {
       type == 'message' ||
       type == 'message_sent';
 
+  /// From `cases/{caseId}/timeline/{eventId}` overlay (merged into [metadata]).
+  bool get isEvidence => metadata['isEvidence'] == true;
+
   factory CaseEvent.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final map = doc.data() ?? <String, dynamic>{};
     final createdAtTs = map['createdAt'] ?? map['timestamp'];
@@ -132,6 +135,11 @@ class CaseEventTypes {
   static const proposalAccepted = 'proposal_accepted';
   static const proposalRejected = 'proposal_rejected';
   static const proposalFinalized = 'proposal_finalized';
+
+  static const systemEvent = 'system_event';
+  static const exchangeEvent = 'exchange_event';
+  static const expenseEvent = 'expense_event';
+  static const checkIn = 'check_in';
 }
 
 class _LegacyPresentation {

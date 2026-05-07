@@ -4,8 +4,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:parentledger/l10n/context_l10n.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
@@ -14,6 +15,8 @@ import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../design/design.dart';
+import '../models/user_role.dart';
+import '../onboarding/onboarding_steps.dart';
 import '../l10n/tone_models.dart';
 import '../l10n/tone_string_resolver.g.dart';
 import '../providers/case_context.dart';
@@ -22,11 +25,16 @@ import '../providers/tone_preference.dart';
 import '../services/firestore_fields.dart';
 import '../services/revenuecat_service.dart';
 import 'children_list_screen.dart';
+import 'expenses_list_screen.dart';
 import 'entry_screen.dart';
 import 'enter_invite_code_screen.dart';
 import 'help_center_screen.dart';
+import 'coparent_invite_sheet.dart';
 import 'invite_attorney_sheet.dart';
+import '../services/invite_link_service.dart';
 import 'invite_phone_sheet.dart';
+import 'widgets/case_connections_section.dart';
+
 import 'settings/refund_help_screen.dart';
 import 'widgets/us_phone_input_formatter.dart';
 
@@ -106,12 +114,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return 'Co-parent';
   }
 
+  void _popOrOpenDashboard() {
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context);
+    } else {
+      Navigator.pushReplacementNamed(context, '/dashboard');
+    }
+  }
+
   static String _profileRoleLabel(Map<String, dynamic> d) {
     final r = (d['role'] ?? '').toString().toLowerCase();
     if (r == 'attorney') return 'Attorney';
+    final pt = (d['parentType'] ?? '').toString().toLowerCase();
+    if (pt == 'mom') return 'Mother';
+    if (pt == 'dad') return 'Father';
+    if (pt == 'guardian') return 'Guardian';
     final g = (d['gender'] ?? '').toString().toLowerCase();
-    if (g == 'male' || g == 'm') return 'Dad';
-    if (g == 'female' || g == 'f') return 'Mom';
+    if (g == 'male' || g == 'm') return 'Father';
+    if (g == 'female' || g == 'f') return 'Mother';
     return 'Parent';
   }
 
@@ -152,17 +172,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final picked = await ImagePicker().pickImage(source: source);
     if (picked == null) return;
 
-    final cropped = await ImageCropper().cropImage(
-      sourcePath: picked.path,
-      aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
-      uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: 'Crop Photo',
-          lockAspectRatio: true,
+    CroppedFile? cropped;
+    try {
+      cropped = await ImageCropper().cropImage(
+        sourcePath: picked.path,
+        aspectRatio: const CropAspectRatio(ratioX: 1, ratioY: 1),
+        uiSettings: [
+          AndroidUiSettings(
+            toolbarTitle: 'Crop Photo',
+            lockAspectRatio: true,
+          ),
+          IOSUiSettings(title: 'Crop Photo'),
+        ],
+      );
+    } on PlatformException catch (e, st) {
+      if (kDebugMode) {
+        debugPrint('image_cropper failed: $e\n$st');
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            context.tTone('uploadFailed'),
+          ),
         ),
-        IOSUiSettings(title: 'Crop Photo'),
-      ],
-    );
+      );
+      return;
+    }
 
     if (cropped == null) return;
     await _uploadPhoto(File(cropped.path));
@@ -179,6 +215,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final ref = FirebaseStorage.instance.ref('profile_photos/$uid.jpg');
       final task = ref.putFile(file);
       task.snapshotEvents.listen((e) {
+        if (!mounted) return;
         if (e.totalBytes > 0) {
           setState(() {
             _uploadProgress = e.bytesTransferred / e.totalBytes;
@@ -196,11 +233,110 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(context.tTone('profilePhotoUpdated'))),
       );
-    } catch (_) {
-      setState(() => _uploading = false);
+    } on FirebaseException catch (e) {
+      // storage/canceled — user backed out, UCrop/activity teardown, or task.cancel().
+      // Native logs often show Code -13040 / "The operation was cancelled".
+      if (mounted) setState(() => _uploading = false);
+      if (e.code == 'storage/canceled' || e.code == 'canceled') {
+        return;
+      }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(context.tTone('uploadFailed'))),
+        );
+      }
+    } catch (e) {
+      if (mounted) setState(() => _uploading = false);
+      final silent = e.toString().toLowerCase().contains('cancel');
+      if (!silent && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.tTone('uploadFailed'))),
+        );
+      }
+    }
+  }
+
+  Future<void> _showAccountTypePicker(
+    BuildContext context,
+    CaseContext session,
+  ) async {
+    final chosen = await showDialog<UserRole>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: PLDesign.surface,
+        title: Text(
+          'Account type',
+          style: PLDesign.sectionTitle.copyWith(fontSize: 18),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Choose how ParentLedger is optimized for you. You can change this anytime.',
+              style: PLDesign.caption.copyWith(
+                color: PLDesign.textMuted,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ListTile(
+              leading: Icon(Icons.person_rounded, color: PLDesign.primary),
+              title: const Text('Parent'),
+              subtitle: const Text('Custody, messages, expenses'),
+              onTap: () => Navigator.pop(ctx, UserRole.parent),
+            ),
+            ListTile(
+              leading: Icon(Icons.balance_rounded, color: PLDesign.primary),
+              title: const Text('Attorney'),
+              subtitle: const Text('Client matters and documents'),
+              onTap: () => Navigator.pop(ctx, UserRole.attorney),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+    if (chosen == null || !context.mounted || chosen == session.userRole) {
+      return;
+    }
+
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+
+    try {
+      final ref = FirebaseFirestore.instance.collection('users').doc(uid);
+      if (chosen == UserRole.attorney) {
+        await ref.set(<String, dynamic>{
+          'role': 'attorney',
+          'onboardingStep': OnboardingSteps.onboardingComplete,
+        }, SetOptions(merge: true));
+      } else {
+        await ref.set(<String, dynamic>{
+          'role': 'parent',
+          'onboardingStep': OnboardingSteps.onboardingComplete,
+        }, SetOptions(merge: true));
+      }
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            chosen == UserRole.attorney
+                ? 'Switched to attorney workspace.'
+                : 'Switched to parent home.',
+          ),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not update account type: $e')),
         );
       }
     }
@@ -259,11 +395,91 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
       return Scaffold(
+        backgroundColor: PLDesign.background,
+        appBar: AppBar(
+          elevation: 0,
+          backgroundColor: Colors.transparent,
+          foregroundColor: PLDesign.textPrimary,
+          systemOverlayStyle: const SystemUiOverlayStyle(
+            statusBarBrightness: Brightness.dark,
+            statusBarIconBrightness: Brightness.light,
+          ),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+            onPressed: _popOrOpenDashboard,
+          ),
+          title: Text(
+            'Profile',
+            style: PLDesign.sectionTitle.copyWith(
+              color: PLDesign.textPrimary,
+              fontSize: 18,
+            ),
+          ),
+          centerTitle: true,
+        ),
         body: Center(child: Text(context.tTone('notSignedIn'))),
       );
     }
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
+      backgroundColor: PLDesign.background,
+      appBar: AppBar(
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        foregroundColor: PLDesign.textPrimary,
+        systemOverlayStyle: const SystemUiOverlayStyle(
+          statusBarBrightness: Brightness.dark,
+          statusBarIconBrightness: Brightness.light,
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          tooltip: MaterialLocalizations.of(context).backButtonTooltip,
+          onPressed: _popOrOpenDashboard,
+        ),
+        title: Text(
+          'Profile',
+          style: PLDesign.sectionTitle.copyWith(
+            color: PLDesign.textPrimary,
+            fontSize: 18,
+          ),
+        ),
+        centerTitle: true,
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: 2,
+        selectedItemColor: PLDesign.primary,
+        unselectedItemColor: PLDesign.textMuted,
+        backgroundColor: PLDesign.surface,
+        type: BottomNavigationBarType.fixed,
+        onTap: (i) {
+          if (i == 0) {
+            _popOrOpenDashboard();
+          } else if (i == 1) {
+            Navigator.push<void>(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => const ExpensesListScreen(),
+              ),
+            );
+          }
+        },
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.dashboard_rounded),
+            label: 'Dashboard',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.attach_money_rounded),
+            label: 'Expenses',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.person_rounded),
+            label: 'Profile',
+          ),
+        ],
+      ),
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -275,30 +491,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
             color: Colors.black.withValues(alpha: 0.45),
           ),
           SafeArea(
-            child: RefreshIndicator(
-              color: PLDesign.primary,
-              onRefresh: _refreshInviteStatus,
-              child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
-                stream: FirebaseFirestore.instance
-                    .collection('users')
-                    .doc(uid)
-                    .snapshots(),
-                builder: (context, userSnap) {
-                  if (!userSnap.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  final d = userSnap.data!.data() ?? {};
-                  final firstName = (d['firstName'] ?? '').toString();
-                  final lastName = (d['lastName'] ?? '').toString();
-                  final fullName = '$firstName $lastName'.trim().isEmpty
-                      ? 'Parent'
-                      : '$firstName $lastName'.trim();
-                  final photoUrl = d['photoUrl'] as String?;
-                  final roleLabel = _profileRoleLabel(d);
+            top: false,
+            child: Padding(
+              padding: EdgeInsets.only(
+                top: MediaQuery.paddingOf(context).top + kToolbarHeight + 12,
+                left: 20,
+                right: 20,
+              ),
+              child: RefreshIndicator(
+                color: PLDesign.primary,
+                onRefresh: _refreshInviteStatus,
+                child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                  stream: FirebaseFirestore.instance
+                      .collection('users')
+                      .doc(uid)
+                      .snapshots(),
+                  builder: (context, userSnap) {
+                    if (!userSnap.hasData) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    final d = userSnap.data!.data() ?? {};
+                    final session = context.watch<CaseContext>();
+                    final caseId = (d['caseId'] ?? '').toString().trim();
+                    final firstName = (d['firstName'] ?? '').toString();
+                    final lastName = (d['lastName'] ?? '').toString();
+                    final fullName = '$firstName $lastName'.trim().isEmpty
+                        ? 'Parent'
+                        : '$firstName $lastName'.trim();
+                    final photoUrl = d['photoUrl'] as String?;
+                    final roleLabel = _profileRoleLabel(d);
 
-                  return ListView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    padding: const EdgeInsets.fromLTRB(20, 12, 20, 40),
+                    return ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.only(bottom: 40),
                     children: [
                       _ProfileHeader(
                         fullName: fullName,
@@ -312,50 +537,62 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         onAvatarTap: _pickPhoto,
                       ),
                       const SizedBox(height: 20),
-                      _SectionTitle('Family'),
-                      const SizedBox(height: 10),
-                      _ProfileTile(
-                        icon: Icons.child_care_rounded,
-                        title: 'Children',
-                        subtitle: 'Profiles & custody context',
-                        onTap: () => Navigator.push<void>(
-                          context,
-                          MaterialPageRoute<void>(
-                            builder: (_) => const ChildrenListScreen(),
+                      if (!session.isAttorney) ...[
+                        _SectionTitle('Family'),
+                        const SizedBox(height: 10),
+                        _ProfileTile(
+                          icon: Icons.child_care_rounded,
+                          title: 'Children',
+                          subtitle: 'Profiles & custody context',
+                          onTap: () => Navigator.push<void>(
+                            context,
+                            MaterialPageRoute<void>(
+                              builder: (_) => const ChildrenListScreen(),
+                            ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 22),
-                      _SectionTitle('Connections'),
-                      const SizedBox(height: 10),
-                      if (_inviteStatus != null) _inviteBanner(context),
-                      _ProfileTile(
-                        icon: Icons.person_add_alt_1_rounded,
-                        title: 'Invite Co-Parent',
-                        subtitle: 'Send connection invite',
-                        onTap: () => showInvitePhoneSheet(
-                          context,
-                          role: 'coparent',
-                        ).then((_) => _refreshInviteStatus()),
-                      ),
-                      const SizedBox(height: 12),
-                      _ProfileTile(
-                        icon: Icons.gavel_rounded,
-                        title: 'Invite Attorney',
-                        subtitle: 'Shareable link — read-only case access',
-                        onTap: () => showInviteAttorneySheet(context),
-                      ),
-                      const SizedBox(height: 12),
+                        const SizedBox(height: 22),
+                        _SectionTitle('Connections'),
+                        const SizedBox(height: 10),
+                        if (caseId.isNotEmpty)
+                          CaseConnectionsSection(
+                            caseId: caseId,
+                            canManageConnections: true,
+                          ),
+                        if (caseId.isNotEmpty) const SizedBox(height: 14),
+                        if (_inviteStatus != null) _inviteBanner(context),
+                        _ProfileTile(
+                          icon: Icons.person_add_alt_1_rounded,
+                          title: 'Invite Co-Parent',
+                          subtitle: 'Invite code & link (recommended)',
+                          onTap: () => showCoparentInviteSheet(context)
+                              .then((_) => _refreshInviteStatus()),
+                        ),
+                        const SizedBox(height: 12),
+                        _ProfileTile(
+                          icon: Icons.gavel_rounded,
+                          title: 'Invite Attorney',
+                          subtitle: 'Shareable link — read-only case access',
+                          onTap: () => showInviteAttorneySheet(context),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
                       _ProfileTile(
                         icon: Icons.pin_outlined,
                         title: 'Enter Invite Code',
-                        subtitle: 'Recover an invite manually',
-                        onTap: () => Navigator.push<void>(
-                          context,
-                          MaterialPageRoute<void>(
-                            builder: (_) => const EnterInviteCodeScreen(),
-                          ),
-                        ),
+                        subtitle: 'Join with co-parent code or legacy invite',
+                        onTap: () {
+                          final pre =
+                              InviteLinkService.pendingInviteCode.value;
+                          Navigator.push<void>(
+                            context,
+                            MaterialPageRoute<void>(
+                              builder: (_) => EnterInviteCodeScreen(
+                                initialCode: pre,
+                              ),
+                            ),
+                          );
+                        },
                       ),
                       const SizedBox(height: 12),
                       _ProfileTile(
@@ -468,28 +705,39 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           },
                         ),
                       ),
-                      const SizedBox(height: 22),
-                      _SectionTitle('Subscription'),
-                      const SizedBox(height: 10),
-                      _SubscriptionPanel(
-                        onManage: _openSubscriptionManagement,
-                        onCancel: _openSubscriptionManagement,
-                      ),
-                      const SizedBox(height: 12),
-                      _ProfileTile(
-                        icon: Icons.receipt_long_rounded,
-                        title: 'Billing & Refunds',
-                        subtitle: 'Subscription and refund support',
-                        onTap: () => Navigator.push<void>(
-                          context,
-                          MaterialPageRoute<void>(
-                            builder: (_) => const RefundHelpScreen(),
+                      if (!session.isAttorney) ...[
+                        const SizedBox(height: 22),
+                        _SectionTitle('Subscription'),
+                        const SizedBox(height: 10),
+                        _SubscriptionPanel(
+                          onManage: _openSubscriptionManagement,
+                          onCancel: _openSubscriptionManagement,
+                        ),
+                        const SizedBox(height: 12),
+                        _ProfileTile(
+                          icon: Icons.receipt_long_rounded,
+                          title: 'Billing & Refunds',
+                          subtitle: 'Subscription and refund support',
+                          onTap: () => Navigator.push<void>(
+                            context,
+                            MaterialPageRoute<void>(
+                              builder: (_) => const RefundHelpScreen(),
+                            ),
                           ),
                         ),
-                      ),
+                      ],
                       const SizedBox(height: 22),
                       _SectionTitle('Account'),
                       const SizedBox(height: 10),
+                      _ProfileTile(
+                        icon: Icons.badge_outlined,
+                        title: 'Account type',
+                        subtitle: session.isAttorney
+                            ? 'Attorney — counsel workspace'
+                            : 'Parent — family workspace',
+                        onTap: () => _showAccountTypePicker(context, session),
+                      ),
+                      const SizedBox(height: 12),
                       _ProfileTile(
                         icon: Icons.logout_rounded,
                         title: 'Sign Out',
@@ -502,6 +750,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               ),
             ),
           ),
+        ),
         ],
       ),
     );

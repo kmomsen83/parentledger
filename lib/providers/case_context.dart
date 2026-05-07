@@ -344,6 +344,14 @@ class CaseContext extends ChangeNotifier {
       return;
     }
 
+    /// Invite-only counsel accounts are not billed; skip RevenueCat for faster readiness.
+    if (isAttorney) {
+      premiumLoading = false;
+      _revenueCatPremium = false;
+      _notifyListenersAndTrackReady();
+      return;
+    }
+
     premiumLoading = true;
     _notifyListenersAndTrackReady();
 

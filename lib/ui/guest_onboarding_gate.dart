@@ -6,13 +6,12 @@ import 'entry_screen.dart';
 
 /// Shows the pre-auth onboarding funnel once; then routes to [EntryScreen] (phone signup).
 ///
-/// Invite deep-links skip this funnel so the invitee path stays unchanged.
-///
-/// Subscription paywall is **not** shown here — see [PaywallScreen] after account setup ([AppRouter]).
+/// Pending invite deep links skip this funnel so the invitee stays on the sign-in path.
 class GuestOnboardingGate extends StatefulWidget {
-  const GuestOnboardingGate({super.key, this.inviteId});
+  const GuestOnboardingGate({super.key, this.hasPendingInvite = false});
 
-  final String? inviteId;
+  /// True when a coparent token, code, or legacy invite id is queued.
+  final bool hasPendingInvite;
 
   @override
   State<GuestOnboardingGate> createState() => _GuestOnboardingGateState();
@@ -28,7 +27,7 @@ class _GuestOnboardingGateState extends State<GuestOnboardingGate> {
   @override
   void initState() {
     super.initState();
-    if (widget.inviteId != null) {
+    if (widget.hasPendingInvite) {
       _needsQuickOnboarding = false;
       _loading = false;
     } else {
@@ -50,7 +49,7 @@ class _GuestOnboardingGateState extends State<GuestOnboardingGate> {
   void _openEntry() {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
-        builder: (_) => EntryScreen(inviteId: widget.inviteId),
+        builder: (_) => const EntryScreen(),
       ),
     );
   }
@@ -77,7 +76,7 @@ class _GuestOnboardingGateState extends State<GuestOnboardingGate> {
     }
 
     if (!_needsQuickOnboarding) {
-      return EntryScreen(inviteId: widget.inviteId);
+      return const EntryScreen();
     }
 
     return PremiumOnboardingFlow(

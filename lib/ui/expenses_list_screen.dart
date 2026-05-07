@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
 import 'package:parentledger/l10n/context_l10n.dart';
@@ -14,6 +15,8 @@ import 'package:printing/printing.dart';
 import 'approve_deny_expense_screen.dart';
 import 'submit_expense_screen.dart';
 import 'widgets/attorney_case_switcher.dart';
+import 'widgets/expense_receipt_fullscreen.dart';
+import 'widgets/premium_upgrade_sheet.dart';
 import 'widgets/trust_elements.dart';
 
 class ExpensesListScreen extends StatefulWidget {
@@ -26,6 +29,23 @@ class ExpensesListScreen extends StatefulWidget {
 class _ExpensesListScreenState extends State<ExpensesListScreen> {
   bool _selectMode = false;
   final Set<String> _selected = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _gateFreeTierParent());
+  }
+
+  Future<void> _gateFreeTierParent() async {
+    if (!mounted) return;
+    final s = context.read<CaseContext>();
+    if (s.isAttorney || s.unlockedParentPremiumFeatures) return;
+    await showPremiumUpgradeSheet(
+      context,
+      feature: DashboardPremiumFeature.expenseLedger,
+    );
+    if (mounted) Navigator.of(context).maybePop();
+  }
 
   Future<void> _openSubmitExpense() async {
     await Navigator.push(
@@ -167,6 +187,7 @@ class _ExpensesListScreenState extends State<ExpensesListScreen> {
                               : double.tryParse('${e['amount']}') ?? 0.0;
                           final desc = (e['description'] ?? '').toString();
                           final created = e['createdAt'];
+                          final receiptUrl = (e['receiptUrl'] ?? '').toString().trim();
                           String whenLabel = '—';
                           if (created is Timestamp) {
                             whenLabel = df.format(created.toDate());
@@ -190,6 +211,7 @@ class _ExpensesListScreenState extends State<ExpensesListScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Expanded(
                                       child: Text(
@@ -200,6 +222,49 @@ class _ExpensesListScreenState extends State<ExpensesListScreen> {
                                         ),
                                       ),
                                     ),
+                                    if (receiptUrl.isNotEmpty) ...[
+                                      const SizedBox(width: 8),
+                                      GestureDetector(
+                                        onTap: () =>
+                                            openExpenseReceiptFullscreen(
+                                          context,
+                                          imageUrl: receiptUrl,
+                                        ),
+                                        child: ClipRRect(
+                                          borderRadius: BorderRadius.circular(10),
+                                          child: CachedNetworkImage(
+                                            imageUrl: receiptUrl,
+                                            width: 52,
+                                            height: 52,
+                                            fit: BoxFit.cover,
+                                            placeholder: (_, __) => Container(
+                                              width: 52,
+                                              height: 52,
+                                              alignment: Alignment.center,
+                                              child: const SizedBox(
+                                                width: 20,
+                                                height: 20,
+                                                child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                ),
+                                              ),
+                                            ),
+                                            errorWidget: (_, __, ___) =>
+                                                Container(
+                                              width: 52,
+                                              height: 52,
+                                              color: PLDesign.surface,
+                                              child: Icon(
+                                                Icons.receipt_long,
+                                                color: PLDesign.textMuted,
+                                                size: 28,
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                    const SizedBox(width: 8),
                                     Text(
                                       '\$${amount.toStringAsFixed(2)}',
                                       style: PLDesign.body.copyWith(

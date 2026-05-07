@@ -390,8 +390,8 @@ Map<String, String> spanishStrings() {
     'Turn off if reimbursement is pending.':
         'Desactiva si el reembolso está pendiente.',
     'Back to sign in': 'Volver al inicio de sesión',
-    'Mom': 'Mamá',
-    'Dad': 'Papá',
+    'Mother': 'Madre',
+    'Father': 'Padre',
     'Guardian': 'Tutor',
     'Could not continue. Please try again.':
         'No se pudo continuar. Inténtalo de nuevo.',

@@ -2,7 +2,9 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 
+import 'ai_service.dart';
 import 'case_messaging_service.dart';
+import 'court_insights_computer.dart';
 import '../models/case_event.dart';
 import 'case_event_service.dart';
 import 'event_logger_service.dart';
@@ -35,18 +37,39 @@ class LegalSummaryService {
       rangeEndInclusive: rangeEndInclusive,
     );
 
+    final insightBundle = await _insightBundle(
+      caseId: caseId,
+      messages: messages,
+      rangeStartInclusive: rangeStartInclusive,
+      rangeEndInclusive: rangeEndInclusive,
+    );
+    final courtInsights = insightBundle.courtInsights;
+    final aiInsightParagraph = insightBundle.aiInsightParagraph;
+
     if (messages.isEmpty) {
+      final emptyBuf = StringBuffer()
+        ..writeln('COMMUNICATION SUMMARY (NEUTRAL RECORD)')
+        ..writeln(
+          'No messages were available for this period. No communication actions are recorded.',
+        );
+      if (courtInsights != null) {
+        emptyBuf
+          ..writeln()
+          ..writeln('INSIGHTS (CASE RECORDS)')
+          ..writeln(courtInsights['narrativeParagraph']);
+      }
       final docRef = summariesCol(caseId).doc();
       await docRef.set(<String, dynamic>{
         'createdAt': FieldValue.serverTimestamp(),
         'createdBy': user.uid,
         'messageCount': 0,
-        'summaryText':
-            'No messages were available for this period. No communication actions are recorded.',
+        'summaryText': emptyBuf.toString(),
         'structured': <String, dynamic>{
           'dateRange': null,
           'actions': <Map<String, dynamic>>[],
           'responsesNoted': 0,
+          if (courtInsights != null) 'courtInsights': courtInsights,
+          if (aiInsightParagraph != null) 'aiInsightParagraph': aiInsightParagraph,
         },
       });
       try {
@@ -103,7 +126,8 @@ class LegalSummaryService {
       range = 'Filter: $a — $b (message dates in range)';
     }
 
-    final buffer = StringBuffer();
+    final buffer = StringBuffer()
+      ..write(_insightPreambleText(courtInsights, aiInsightParagraph));
     buffer.writeln('COMMUNICATION SUMMARY (NEUTRAL RECORD)');
     if (range != null) {
       buffer.writeln('Period covered: $range.');
@@ -143,6 +167,8 @@ class LegalSummaryService {
         'rangeFilterEnd': rangeEndInclusive?.toIso8601String(),
         'actions': actions,
         'responsesNoted': messages.where((m) => m['isRead'] == true).length,
+        if (courtInsights != null) 'courtInsights': courtInsights,
+        if (aiInsightParagraph != null) 'aiInsightParagraph': aiInsightParagraph,
       },
     });
 
@@ -168,6 +194,81 @@ class LegalSummaryService {
     return docRef.id;
   }
 
+  static Future<({Map<String, dynamic>? courtInsights, String? aiInsightParagraph})>
+      _insightBundle({
+    required String caseId,
+    required List<Map<String, dynamic>> messages,
+    DateTime? rangeStartInclusive,
+    DateTime? rangeEndInclusive,
+  }) async {
+    Map<String, dynamic>? courtInsights;
+    String? aiInsightParagraph;
+    try {
+      courtInsights = await CourtInsightsComputer.compute(
+        caseId: caseId,
+        messages: messages,
+        rangeStartInclusive: rangeStartInclusive,
+        rangeEndInclusive: rangeEndInclusive,
+      );
+      if (messages.isNotEmpty) {
+        final rawLines = messages
+            .map((m) => (m['text'] ?? '').toString())
+            .where((s) => s.trim().isNotEmpty)
+            .toList();
+        final norm = AiService.normalizeMessagesForAi(rawLines);
+        if (norm.isNotEmpty) {
+          try {
+            aiInsightParagraph = await AiService.generateCourtSummary(norm);
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+    return (courtInsights: courtInsights, aiInsightParagraph: aiInsightParagraph);
+  }
+
+  static String _insightPreambleText(
+    Map<String, dynamic>? courtInsights,
+    String? aiInsightParagraph,
+  ) {
+    if (courtInsights == null) return '';
+    final b = StringBuffer()
+      ..writeln('COURT INSIGHTS SNAPSHOT')
+      ..writeln(courtInsights['narrativeParagraph']);
+    final met = courtInsights['metrics'];
+    if (met is Map) {
+      final latePct = met['lateArrivalPercent'];
+      final missed = met['missedExchanges'];
+      final avgH = met['avgResponseHours'];
+      b.writeln(
+        'Exchange timing: $latePct% of sampled check-ins logged late arrival; '
+        '$missed missed scheduled exchange(s) in scope.',
+      );
+      if (avgH != null) {
+        b.writeln(
+          'Approx. average cross-party response interval: $avgH hours.',
+        );
+      }
+    }
+    final ma = courtInsights['messageAnalysis'];
+    if (ma is Map) {
+      b.writeln(
+        'Message screening (lexical): profanity signals ${ma['profanitySignals']}, '
+        'aggressive tone ${ma['aggressiveToneSignals']}, threat-language ${ma['threatLanguageSignals']}.',
+      );
+    }
+    if (aiInsightParagraph != null && aiInsightParagraph.trim().isNotEmpty) {
+      b
+        ..writeln()
+        ..writeln('AI-ASSISTED RECORD OVERVIEW')
+        ..writeln(aiInsightParagraph.trim());
+    }
+    b
+      ..writeln()
+      ..writeln('— — —')
+      ..writeln();
+    return b.toString();
+  }
+
   /// Attorney tool: messages + timeline + violations + neutral pattern notes.
   static Future<String> generateAttorneyCourtSummaryAndStore({
     required String caseId,
@@ -181,6 +282,15 @@ class LegalSummaryService {
       conversationId: CaseMessagingService.defaultConversationId,
       limit: messageLimit,
     );
+
+    final insightBundle = await _insightBundle(
+      caseId: caseId,
+      messages: messages,
+      rangeStartInclusive: null,
+      rangeEndInclusive: null,
+    );
+    final courtInsights = insightBundle.courtInsights;
+    final aiInsightParagraph = insightBundle.aiInsightParagraph;
 
     final allEvents = await CaseEventService.fetchCaseEvents(caseId);
     final timelineRecent = allEvents.reversed.take(250).toList();
@@ -221,7 +331,8 @@ class LegalSummaryService {
         ? '${df.format(first)} through ${df.format(last)}'
         : null;
 
-    final buf = StringBuffer();
+    final buf = StringBuffer()
+      ..write(_insightPreambleText(courtInsights, aiInsightParagraph));
     buf.writeln('ATTORNEY CASE BRIEF — COMMUNICATION & COMPLIANCE INDEX');
     buf.writeln('(Neutral record — not legal advice.)');
     buf.writeln();
@@ -341,6 +452,8 @@ class LegalSummaryService {
             .toList(),
         'communicationPatternCounts': patternTotals,
         'flaggedMessageCount': flaggedMessages,
+        if (courtInsights != null) 'courtInsights': courtInsights,
+        if (aiInsightParagraph != null) 'aiInsightParagraph': aiInsightParagraph,
       },
     });
 

@@ -11,6 +11,7 @@ import '../../providers/case_context.dart';
 import 'upcoming_exchange_detail_screen.dart';
 import 'exchange_checkin_screen.dart';
 import 'create_exchange_screen.dart';
+import 'widgets/premium_upgrade_sheet.dart';
 
 class UpcomingExchangesListScreen extends StatefulWidget {
   const UpcomingExchangesListScreen({super.key});
@@ -68,7 +69,16 @@ class _UpcomingExchangesListScreenState
     setState(() {});
   }
 
-  void scheduleNewExchange() {
+  Future<void> scheduleNewExchange() async {
+    final s = context.read<CaseContext>();
+    if (!s.isAttorney && !s.unlockedParentPremiumFeatures) {
+      await showPremiumUpgradeSheet(
+        context,
+        feature: DashboardPremiumFeature.calendarScheduling,
+      );
+      return;
+    }
+    if (!mounted) return;
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const CreateExchangeScreen()),
@@ -77,7 +87,7 @@ class _UpcomingExchangesListScreenState
 
   @override
   Widget build(BuildContext context) {
-    final caseId = Provider.of<CaseContext>(context).caseId;
+    final caseId = context.watch<CaseContext>().caseId;
 
     if (caseId == null) {
       return Scaffold(
@@ -169,7 +179,7 @@ class _UpcomingExchangesListScreenState
                   ),
                   const SizedBox(height: 36),
                   FilledButton.icon(
-                    onPressed: scheduleNewExchange,
+                    onPressed: () => scheduleNewExchange(),
                     icon: const Icon(Icons.add_rounded),
                     label: Text(context.tTone('scheduleNewExchange')),
                     style: FilledButton.styleFrom(
@@ -205,7 +215,7 @@ class _UpcomingExchangesListScreenState
                   bottom: 20,
                   right: 20,
                   child: FloatingActionButton.extended(
-                    onPressed: scheduleNewExchange,
+                    onPressed: () => scheduleNewExchange(),
                     icon: const Icon(Icons.add),
                     label: Text(context.tTone('schedule')),
                   ),

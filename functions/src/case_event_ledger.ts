@@ -53,10 +53,13 @@ export const LEDGER_EVENT_TYPES = new Set([
   "invite_sent",
   "invite_accepted",
   "status_change",
+  "check_in",
   "proposal_updated",
   "proposal_accepted",
   "proposal_rejected",
   "proposal_finalized",
+  "member_removed",
+  "attorney_access_revoked",
 ]);
 
 /**

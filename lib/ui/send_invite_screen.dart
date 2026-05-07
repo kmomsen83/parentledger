@@ -1,9 +1,11 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../design/design.dart';
+import '../services/invite_dynamic_link_builder.dart';
 
 class SendInviteScreen extends StatefulWidget {
 const SendInviteScreen({super.key});
@@ -85,9 +87,22 @@ DateTime.now().add(const Duration(days: 30)),
 "createdAt": FieldValue.serverTimestamp(),
 });
 
-/// 🔥 LINK
-final link =
-"https://parentledger.app/invite?id=${inviteRef.id}";
+Uri shareUri;
+try {
+shareUri =
+await InviteDynamicLinkBuilder.buildShortCoparentInvite(inviteRef.id);
+} on InviteDynamicLinkApiException catch (e) {
+if (kDebugMode) {
+debugPrint('Invite Dynamic Link failed: $e');
+}
+shareUri =
+InviteDynamicLinkBuilder.universalCoparentInviteUrl(inviteRef.id);
+}
+final link = shareUri.toString();
+// ignore: avoid_print
+print('Invite token: ${inviteRef.id}');
+// ignore: avoid_print
+print('Universal link: $link');
 
 final smsUri = Uri.parse(
 "sms:$normalized?body=Join me on ParentLedger: $link",

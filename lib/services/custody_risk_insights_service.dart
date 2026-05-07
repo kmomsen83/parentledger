@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'case_paths.dart';
+import 'crashlytics_service.dart';
+import 'notification_service.dart';
 
 /// Persists case compliance metrics to `cases/{caseId}/insights/risk`.
 class CustodyRiskInsightsService {
@@ -121,7 +123,12 @@ class CustodyRiskInsightsService {
     }
 
     final prevSnap = await riskDoc(caseId).get();
-    final previousScore = (prevSnap.data()?['riskScore'] as num?)?.toInt();
+    final prevMap = prevSnap.data();
+    final previousScore = (prevMap?['riskScore'] as num?)?.toInt();
+    final prevFactors = prevMap?['factors'] as Map<String, dynamic>?;
+    final prevMissed =
+        (prevFactors?['missedExchanges'] as num?)?.toInt() ?? 0;
+    final prevLevel = prevMap?['riskLevel']?.toString();
     String riskTrend = 'stable';
     if (previousScore != null) {
       if (score > previousScore) {
@@ -149,6 +156,42 @@ class CustodyRiskInsightsService {
       },
       SetOptions(merge: true),
     );
+
+    try {
+      if (missedExchanges > prevMissed) {
+        await NotificationService.notifyCounselMissedExchanges(
+          caseId: caseId,
+          totalMissed: missedExchanges,
+        );
+      }
+      if (previousScore != null) {
+        final levelStr = level;
+        if (prevLevel != null &&
+            prevLevel.isNotEmpty &&
+            prevLevel != levelStr) {
+          await NotificationService.notifyCounselRiskActivity(
+            caseId: caseId,
+            summary:
+                'Risk level changed from $prevLevel to $levelStr (score $previousScore → $score).',
+          );
+        } else {
+          final delta = score - previousScore;
+          if (delta >= 12 && score >= 55) {
+            await NotificationService.notifyCounselRiskActivity(
+              caseId: caseId,
+              summary:
+                  'Custody risk score increased materially ($previousScore → $score, $levelStr).',
+            );
+          }
+        }
+      }
+    } catch (e, st) {
+      await CrashlyticsService.recordError(
+        e,
+        st,
+        reason: 'counsel custody risk notify',
+      );
+    }
   }
 
   static Stream<DocumentSnapshot<Map<String, dynamic>>> watchRisk(String caseId) =>

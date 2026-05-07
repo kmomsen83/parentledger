@@ -2491,6 +2491,126 @@ class AppLocalizationsEn extends AppLocalizations {
   String get dashboardCaseSubtitle_legal => 'Here\'s your case at a glance';
 
   @override
+  String get dashboardPremiumHeadline_neutral =>
+      'Everything documented. No more arguments.';
+
+  @override
+  String get dashboardPremiumHeadline_professional =>
+      'Everything documented. No more arguments.';
+
+  @override
+  String get dashboardPremiumHeadline_legal =>
+      'Everything documented. No more arguments.';
+
+  @override
+  String get dashboardPremiumTagline_neutral =>
+      'Track expenses, messages, and custody schedules in one place.';
+
+  @override
+  String get dashboardPremiumTagline_professional =>
+      'Track expenses, messages, and custody schedules in one place.';
+
+  @override
+  String get dashboardPremiumTagline_legal =>
+      'Track expenses, messages, and custody schedules in one place.';
+
+  @override
+  String get messagesCardTitle_neutral => 'Messages';
+
+  @override
+  String get messagesCardTitle_professional => 'Messages';
+
+  @override
+  String get messagesCardTitle_legal => 'Messages';
+
+  @override
+  String get messagesPreviewLoading_neutral => 'Loading recent messages…';
+
+  @override
+  String get messagesPreviewLoading_professional => 'Loading recent messages…';
+
+  @override
+  String get messagesPreviewLoading_legal => 'Loading recent messages…';
+
+  @override
+  String get messagesPreviewEmpty_neutral => 'No recent messages';
+
+  @override
+  String get messagesPreviewEmpty_professional => 'No recent messages';
+
+  @override
+  String get messagesPreviewEmpty_legal => 'No recent messages';
+
+  @override
+  String get messagesUnreadNone_neutral => 'No unread messages';
+
+  @override
+  String get messagesUnreadNone_professional => 'No unread messages';
+
+  @override
+  String get messagesUnreadNone_legal => 'No unread messages';
+
+  @override
+  String get messagesUnreadOne_neutral => '1 unread message';
+
+  @override
+  String get messagesUnreadOne_professional => '1 unread message';
+
+  @override
+  String get messagesUnreadOne_legal => '1 unread message';
+
+  @override
+  String messagesUnreadMany_neutral(int count) {
+    return '$count unread messages';
+  }
+
+  @override
+  String messagesUnreadMany_professional(int count) {
+    return '$count unread messages';
+  }
+
+  @override
+  String messagesUnreadMany_legal(int count) {
+    return '$count unread messages';
+  }
+
+  @override
+  String get balanceCardSecurePill_neutral =>
+      'All activity is securely documented';
+
+  @override
+  String get balanceCardSecurePill_professional =>
+      'All activity is securely documented';
+
+  @override
+  String get balanceCardSecurePill_legal =>
+      'All activity is securely documented';
+
+  @override
+  String get dashboardTrustBannerPrimary_neutral =>
+      'Every expense and message is recorded.';
+
+  @override
+  String get dashboardTrustBannerPrimary_professional =>
+      'Every expense and message is recorded.';
+
+  @override
+  String get dashboardTrustBannerPrimary_legal =>
+      'Every expense and message is recorded.';
+
+  @override
+  String get dashboardTrustBannerSecondary_neutral =>
+      'Export records anytime for court or mediation.';
+
+  @override
+  String get dashboardTrustBannerSecondary_professional =>
+      'Export records anytime for court or mediation.';
+
+  @override
+  String get dashboardTrustBannerSecondary_legal =>
+      'Export records anytime for court or mediation.';
+
+  @override
   String get addExpense_neutral => '+ Add Expense';
 
   @override
@@ -2516,6 +2636,15 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get requestReimbursement_legal => 'Request reimbursement';
+
+  @override
+  String get requestPayment_neutral => 'Request Payment';
+
+  @override
+  String get requestPayment_professional => 'Request Payment';
+
+  @override
+  String get requestPayment_legal => 'Request Payment';
 
   @override
   String get noMessages_neutral => 'No messages yet';
@@ -3765,22 +3894,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get caseTimeline2_legal => 'Case Timeline2';
 
   @override
-  String get mom_neutral => 'Mom';
+  String get mom_neutral => 'Mother';
 
   @override
-  String get mom_professional => 'Mom';
+  String get mom_professional => 'Mother';
 
   @override
-  String get mom_legal => 'Mom';
+  String get mom_legal => 'Mother';
 
   @override
-  String get dad_neutral => 'Dad';
+  String get dad_neutral => 'Father';
 
   @override
-  String get dad_professional => 'Dad';
+  String get dad_professional => 'Father';
 
   @override
-  String get dad_legal => 'Dad';
+  String get dad_legal => 'Father';
 
   @override
   String get guardian_neutral => 'Guardian';
@@ -3959,13 +4088,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get balanceUpdatedJustNow_legal => 'Updated just now';
 
   @override
-  String get balanceUpdatedTodayIntro_neutral => 'Updated today ·';
+  String get balanceUpdatedTodayIntro_neutral => 'Updated today •';
 
   @override
-  String get balanceUpdatedTodayIntro_professional => 'Updated today ·';
+  String get balanceUpdatedTodayIntro_professional => 'Updated today •';
 
   @override
-  String get balanceUpdatedTodayIntro_legal => 'Updated today ·';
+  String get balanceUpdatedTodayIntro_legal => 'Updated today •';
 
   @override
   String get completeWorkspaceSetupToTrackBalances_neutral =>

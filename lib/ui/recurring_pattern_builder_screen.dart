@@ -26,8 +26,7 @@ String type = "pickup";
 bool saving = false;
 
 Future<void> save() async {
-final caseId =
-Provider.of<CaseContext>(context, listen: false).caseId;
+final caseId = context.read<CaseContext>().caseId;
 
 if (caseId == null || selectedChildId == null) {
 ScaffoldMessenger.of(context).showSnackBar(

@@ -28,9 +28,12 @@ class RevenueCatService {
 
   static Future<void> configure() async {
     if (_configured) return;
-    if (kDebugMode) {
-      await Purchases.setLogLevel(LogLevel.debug);
-    }
+    // Verbose `[Purchases] - DEBUG` spam (e.g. on every rebuild / IME) obscures real issues.
+    // Use LogLevel.debug only when diagnosing billing: `--dart-define=REVENUECAT_VERBOSE_LOGS=true`
+    const verbose = bool.fromEnvironment('REVENUECAT_VERBOSE_LOGS');
+    await Purchases.setLogLevel(
+      kDebugMode && verbose ? LogLevel.debug : LogLevel.warn,
+    );
     await Purchases.configure(PurchasesConfiguration(apiKey));
     _configured = true;
   }

@@ -6,6 +6,18 @@ import 'package:uuid/uuid.dart';
 
 import 'event_logger_service.dart';
 
+/// Paths-only invite URLs from [InviteService.createAttorneyInvite].
+class AttorneyInviteLinks {
+  const AttorneyInviteLinks({
+    required this.token,
+    required this.universalLink,
+    required this.deepLink,
+  });
+
+  final String token;
+  final String universalLink;
+  final String deepLink;
+}
 
 class InviteService {
   static final _db = FirebaseFirestore.instance;
@@ -17,9 +29,14 @@ class InviteService {
   static String? pendingInviteId;
   static String? pendingInviteToken;
 
-  static const String _inviteBaseUrl = 'https://parentledger.app/invite';
+  /// Clears static invite flags when [InviteLinkService.consume] runs.
+  static void clearPendingDeepLinkState() {
+    pendingInviteId = null;
+    pendingInviteToken = null;
+  }
 
-  /// New token-based invite creation.
+  /// Creates a `caseInvites` token (attorney flows, etc.).
+  /// Prefer [CoparentInviteCodeService.createInviteCode] for native co-parent invites.
   static Future<String> createInvite({
     required String caseId,
     required String role,
@@ -62,7 +79,7 @@ class InviteService {
       },
     );
 
-    return '$_inviteBaseUrl?token=$token';
+    return token;
   }
 
   static Future<Map<String, dynamic>> validateCaseInviteToken(
@@ -83,6 +100,11 @@ class InviteService {
       (result.data as Map?)?.cast<String, dynamic>() ??
           const <String, dynamic>{},
     );
+  }
+
+  static Future<void> declineCoparentInviteToken(String token) async {
+    final callable = _functions.httpsCallable('declineCoparentInvite');
+    await callable.call(<String, dynamic>{'token': token});
   }
 
   /// Accept invite: transaction on Firestore (client-side).
@@ -106,17 +128,14 @@ class InviteService {
     // `invite_accepted` is recorded by the `acceptInvite` Cloud Function (hashed ledger).
   }
 
-  /// Shareable attorney invite (no phone required). Returns new [caseInvites] document id.
-  static Future<String> createAttorneyInvite({
+  /// Shareable attorney invite (path-only URLs; no query params).
+  static Future<AttorneyInviteLinks> createAttorneyInvite({
     required String caseId,
     required String fromUserId,
     String? intendedRecipientEmail,
     String? intendedRecipientUserId,
   }) async {
-    // Kept for call-site compatibility; backend derives canonical sender/case.
     assert(caseId.isNotEmpty && fromUserId.isNotEmpty);
-    // Backend callable ensures canonical lifecycle mirroring, logging, and
-    // intended-recipient binding checks.
     final callable = _functions.httpsCallable('createCaseInvite');
     final result = await callable.call(<String, dynamic>{
       'role': 'attorney',
@@ -128,11 +147,48 @@ class InviteService {
       (result.data as Map?)?.cast<String, dynamic>() ??
           const <String, dynamic>{},
     );
-    final inviteId = (data['inviteId'] ?? '').toString();
-    if (inviteId.isEmpty) {
-      throw Exception('Could not create attorney invite.');
+    final token =
+        (data['token'] ?? data['inviteId'] ?? '').toString().trim();
+    final universalLink = (data['universalLink'] ?? '').toString().trim();
+    final deepLink = (data['deepLink'] ?? '').toString().trim();
+    if (token.isEmpty || universalLink.isEmpty || deepLink.isEmpty) {
+      throw Exception('Could not create attorney invite links.');
     }
-    return inviteId;
+    final u = Uri.tryParse(universalLink);
+    if (u == null || u.hasQuery) {
+      throw Exception('Invalid attorney universal link from server.');
+    }
+    final segs = u.pathSegments;
+    final ix = segs.indexOf('attorney');
+    if (ix < 0 || ix + 1 >= segs.length) {
+      throw Exception('Invalid attorney universal link from server.');
+    }
+    final seg = segs[ix + 1];
+    if (seg != token && Uri.decodeComponent(seg) != token) {
+      throw Exception('Invalid attorney universal link from server.');
+    }
+    final ud = Uri.tryParse(deepLink);
+    if (ud == null || ud.scheme.toLowerCase() != 'parentledger') {
+      throw Exception('Invalid attorney deep link from server.');
+    }
+    final ds = ud.pathSegments;
+    final di = ds.indexOf('attorney');
+    if (di < 0 || di + 1 >= ds.length) {
+      throw Exception('Invalid attorney deep link from server.');
+    }
+    final dseg = ds[di + 1];
+    if (dseg != token && Uri.decodeComponent(dseg) != token) {
+      throw Exception('Invalid attorney deep link from server.');
+    }
+    // ignore: avoid_print
+    print('Invite token: $token');
+    // ignore: avoid_print
+    print('Universal link: $universalLink');
+    return AttorneyInviteLinks(
+      token: token,
+      universalLink: universalLink,
+      deepLink: deepLink,
+    );
   }
 
   static Future<Map<String, dynamic>> validateInvite(String inviteId) async {

@@ -12,9 +12,14 @@ import 'widgets/ai_loading_skeleton.dart';
 /// AI-driven insights: summaries, compliance risk, messaging analysis.
 /// Accent: purple — distinct from [TimelineViolationsScreen] (blue).
 class CaseInsightsScreen extends StatefulWidget {
-  const CaseInsightsScreen({super.key, required this.caseId});
+  const CaseInsightsScreen({
+    super.key,
+    required this.caseId,
+    this.embedInParent = false,
+  });
 
   final String caseId;
+  final bool embedInParent;
 
   static const Color accent = Color(0xFF8B5CF6);
 
@@ -148,29 +153,31 @@ class _CaseInsightsScreenState extends State<CaseInsightsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: PLDesign.background,
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: PLDesign.surface,
-        foregroundColor: PLDesign.textPrimary,
-        iconTheme: const IconThemeData(color: CaseInsightsScreen.accent),
-        title: Text(
-          context.tTone('insightsTitle'),
-          style: PLDesign.sectionTitle.copyWith(
-            color: PLDesign.textPrimary,
-            fontSize: 18,
-          ),
-        ),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: _loading ? null : () => _load(refresh: true),
-            icon: Icon(Icons.refresh_rounded, color: CaseInsightsScreen.accent.withValues(alpha: 0.9)),
-          ),
-        ],
-      ),
-      body: _loading
+    final appBar = widget.embedInParent
+        ? null
+        : AppBar(
+            elevation: 0,
+            backgroundColor: PLDesign.surface,
+            foregroundColor: PLDesign.textPrimary,
+            iconTheme: const IconThemeData(color: CaseInsightsScreen.accent),
+            title: Text(
+              context.tTone('insightsTitle'),
+              style: PLDesign.sectionTitle.copyWith(
+                color: PLDesign.textPrimary,
+                fontSize: 18,
+              ),
+            ),
+            actions: [
+              IconButton(
+                tooltip: 'Refresh',
+                onPressed: _loading ? null : () => _load(refresh: true),
+                icon: Icon(Icons.refresh_rounded,
+                    color: CaseInsightsScreen.accent.withValues(alpha: 0.9)),
+              ),
+            ],
+          );
+
+    final bodyContent = _loading
           ? const Center(
               child: Padding(
                 padding: EdgeInsets.symmetric(horizontal: 28),
@@ -233,7 +240,7 @@ class _CaseInsightsScreenState extends State<CaseInsightsScreen> {
                       ),
                     )
                   : ListView(
-                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+                      padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
                       children: [
                         _sectionCard(
                           icon: Icons.summarize_outlined,
@@ -370,7 +377,46 @@ class _CaseInsightsScreenState extends State<CaseInsightsScreen> {
                           ),
                         ),
                       ],
-                    ),
+                    );
+
+    final body = widget.embedInParent
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Material(
+                color: PLDesign.surface,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          context.tTone('insightsTitle'),
+                          style: PLDesign.sectionTitle.copyWith(fontSize: 16),
+                        ),
+                      ),
+                      IconButton(
+                        tooltip: 'Refresh',
+                        onPressed: _loading ? null : () => _load(refresh: true),
+                        icon: Icon(
+                          Icons.refresh_rounded,
+                          color: CaseInsightsScreen.accent.withValues(alpha: 0.9),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Expanded(child: bodyContent),
+            ],
+          )
+        : bodyContent;
+
+    return Scaffold(
+      primary: !widget.embedInParent,
+      backgroundColor: PLDesign.background,
+      appBar: appBar,
+      body: body,
     );
   }
 

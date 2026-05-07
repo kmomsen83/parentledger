@@ -16,7 +16,7 @@ await ref.set({
 "createdAt": FieldValue.serverTimestamp(),
 
 "isPremium": false,
-"onboardingStep": "new",
+"onboardingStep": "account_type",
 "coparentConnected": false,
 "childrenCount": 0,
 

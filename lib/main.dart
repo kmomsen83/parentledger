@@ -11,6 +11,7 @@ import 'l10n/tone_string_resolver.g.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'config/env.dart';
+import 'ui/dashboard_screen.dart';
 import 'ui/help_center_screen.dart';
 import 'ui/route_case_guard.dart';
 import 'ui/splash_screen.dart';
@@ -19,6 +20,7 @@ import 'providers/case_context.dart';
 import 'providers/tone_preference.dart';
 import 'design/design.dart';
 import 'services/invite_link_service.dart';
+import 'ui/invite/invite_accept_named_route.dart';
 import 'services/case_switcher_service.dart';
 import 'services/app_check_bootstrap.dart';
 import 'services/crashlytics_service.dart';
@@ -121,8 +123,7 @@ class AppBootstrap extends StatelessWidget {
           ),
           ChangeNotifierProvider(
             create: (context) {
-              final sub =
-                  Provider.of<SubscriptionService>(context, listen: false);
+              final sub = context.read<SubscriptionService>();
               final session = CaseContext(subscriptionService: sub);
               session.start();
               return session;
@@ -154,7 +155,7 @@ class _StartupFailureApp extends StatelessWidget {
       onGenerateTitle: (context) {
         try {
           final loc = AppLocalizations.of(context);
-          final tone = Provider.of<TonePreference>(context, listen: false).tone;
+          final tone = context.read<TonePreference>().tone;
           return toneString(loc, 'appName', tone);
         } catch (_) {
           return 'ParentLedger';
@@ -221,7 +222,7 @@ class _ParentLedgerAppState extends State<ParentLedgerApp> {
       onGenerateTitle: (context) {
         try {
           final loc = AppLocalizations.of(context);
-          final tone = Provider.of<TonePreference>(context, listen: false).tone;
+          final tone = context.read<TonePreference>().tone;
           return toneString(loc, 'appName', tone);
         } catch (_) {
           return 'ParentLedger';
@@ -241,6 +242,8 @@ class _ParentLedgerAppState extends State<ParentLedgerApp> {
       home: const SplashScreen(),
       routes: <String, WidgetBuilder>{
         '/help': (_) => const HelpCenterScreen(),
+        '/dashboard': (_) => const DashboardScreen(),
+        '/accept-invite': (_) => const InviteAcceptNamedRoute(),
       },
       onGenerateRoute: CaseRoutes.onGenerateRoute,
       builder: (context, child) => child ?? const SizedBox.shrink(),

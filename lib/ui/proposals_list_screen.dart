@@ -12,6 +12,7 @@ import 'active_negotiation_screen.dart';
 import 'create_proposal_screen.dart';
 import 'proposal_detail_screen.dart';
 import 'proposal_resolution_screen.dart';
+import 'widgets/premium_upgrade_sheet.dart';
 
 class ProposalsListScreen extends StatefulWidget {
   const ProposalsListScreen({super.key});
@@ -29,6 +30,18 @@ class _ProposalsListScreenState extends State<ProposalsListScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _gateFreeTierParent());
+  }
+
+  Future<void> _gateFreeTierParent() async {
+    if (!mounted) return;
+    final s = context.read<CaseContext>();
+    if (s.isAttorney || s.unlockedParentPremiumFeatures) return;
+    await showPremiumUpgradeSheet(
+      context,
+      feature: DashboardPremiumFeature.proposals,
+    );
+    if (mounted) Navigator.of(context).maybePop();
   }
 
   Future<void> _primeAiForList(List<NegotiationProposal> list) async {

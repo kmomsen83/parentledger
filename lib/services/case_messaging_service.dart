@@ -212,6 +212,22 @@ class CaseMessagingService {
       await CrashlyticsService.recordError(e, st, reason: 'notifyMessageSent');
     }
 
+    if (legalFlag != null) {
+      try {
+        await NotificationService.notifyCounselFlaggedMessage(
+          caseId: caseId,
+          legalFlag: legalFlag,
+          preview: preview,
+        );
+      } catch (e, st) {
+        await CrashlyticsService.recordError(
+          e,
+          st,
+          reason: 'notifyCounselFlagged',
+        );
+      }
+    }
+
     await CaseParticipantService.ensureParticipant(
       caseId: caseId,
       userId: user.uid,

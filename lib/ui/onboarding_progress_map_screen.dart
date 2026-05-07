@@ -11,6 +11,9 @@ class OnboardingProgressMapScreen extends StatelessWidget {
 
   int _stepIndex(String step) {
     switch (step) {
+      case OnboardingSteps.accountType:
+      case OnboardingSteps.roleSelection:
+        return 0;
       case OnboardingSteps.newUser:
         return 1;
       case OnboardingSteps.termsPending:

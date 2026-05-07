@@ -44,10 +44,10 @@ name: data["name"] ?? "",
 dob: _parseDate(data["dob"]),
 gender: data["gender"] ?? "Unknown",
 
-school: data["school"],
-grade: data["grade"],
-activities: data["activities"],
-medicalNotes: data["medicalNotes"],
+school: _stringField(data["school"]),
+grade: _stringField(data["grade"]),
+activities: _activitiesField(data["activities"]),
+medicalNotes: _stringField(data["medicalNotes"]),
 photoUrl: data["photoUrl"],
 
 createdAt: _parseDate(data["createdAt"]),
@@ -68,10 +68,10 @@ name: data["name"] ?? "",
 dob: _parseDate(data["dob"]),
 gender: data["gender"] ?? "Unknown",
 
-school: data["school"],
-grade: data["grade"],
-activities: data["activities"],
-medicalNotes: data["medicalNotes"],
+school: _stringField(data["school"]),
+grade: _stringField(data["grade"]),
+activities: _activitiesField(data["activities"]),
+medicalNotes: _stringField(data["medicalNotes"]),
 photoUrl: data["photoUrl"],
 
 createdAt: _parseDate(data["createdAt"]),
@@ -79,6 +79,22 @@ createdAt: _parseDate(data["createdAt"]),
 caseId: caseId,
 );
 }
+
+static String? _stringField(dynamic value) {
+    if (value == null) return null;
+    if (value is String) return value;
+    return value.toString();
+  }
+
+  /// Activities may be stored as a string or a list of strings.
+  static String? _activitiesField(dynamic value) {
+    if (value == null) return null;
+    if (value is String) return value;
+    if (value is List) {
+      return value.map((e) => e.toString().trim()).where((s) => s.isNotEmpty).join(', ');
+    }
+    return value.toString();
+  }
 
 /// 🔥 SAFE DATE PARSER (prevents crashes)
 static DateTime? _parseDate(dynamic value) {

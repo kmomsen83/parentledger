@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../providers/case_context.dart';
 import 'calendar_month_view_screen.dart';
+import 'widgets/premium_upgrade_sheet.dart';
 
 class CustodyScheduleSetupScreen extends StatefulWidget {
 const CustodyScheduleSetupScreen({super.key});
@@ -126,12 +130,14 @@ style: TextStyle(color: Colors.white),
 }
 
 void saveSchedule() {
-/// 🔥 FUTURE REAL LOGIC
-/// Save to Firestore
-/// Generate recurring calendar events
-/// Trigger AI baseline
-/// Sync calendar
-
+  final session = context.read<CaseContext>();
+  if (!session.isAttorney && !session.unlockedParentPremiumFeatures) {
+    showPremiumUpgradeSheet(
+      context,
+      feature: DashboardPremiumFeature.calendarScheduling,
+    );
+    return;
+  }
 Navigator.push(
   context,
   MaterialPageRoute<void>(
@@ -141,6 +147,14 @@ Navigator.push(
 }
 
 void previewCalendar() {
+  final session = context.read<CaseContext>();
+  if (!session.isAttorney && !session.unlockedParentPremiumFeatures) {
+    showPremiumUpgradeSheet(
+      context,
+      feature: DashboardPremiumFeature.calendarScheduling,
+    );
+    return;
+  }
 Navigator.push(
   context,
   MaterialPageRoute<void>(

@@ -61,6 +61,29 @@ class CaseEventService {
     }, SetOptions(merge: true));
   }
 
+  static CollectionReference<Map<String, dynamic>> _caseTimelineCol(
+    String caseId,
+  ) =>
+      _db.collection('cases').doc(caseId).collection('timeline');
+
+  /// Docs keyed by ledger `case_events` id — only entries with `isEvidence` are merged.
+  static Map<String, bool> _evidenceFlagsByEventId(
+    QuerySnapshot<Map<String, dynamic>>? tl,
+  ) {
+    final map = <String, bool>{};
+    if (tl == null) {
+      return map;
+    }
+    for (final d in tl.docs) {
+      final m = d.data();
+      if (!m.containsKey('isEvidence')) {
+        continue;
+      }
+      map[d.id] = m['isEvidence'] == true;
+    }
+    return map;
+  }
+
   static Map<String, List<String>> _tagsByEventId(
     QuerySnapshot<Map<String, dynamic>>? ann,
   ) {
@@ -79,13 +102,23 @@ class CaseEventService {
     return tagByEvent;
   }
 
-  static CaseEvent _caseEventWithTags(CaseEvent e, Map<String, List<String>> tags) {
-    final extra = tags[e.id];
-    if (extra == null || extra.isEmpty) {
+  static CaseEvent _mergeCaseEventOverlay(
+    CaseEvent e,
+    Map<String, List<String>> tags,
+    Map<String, bool> evidence,
+  ) {
+    final tagExtra = tags[e.id];
+    final ev = evidence[e.id];
+    if ((tagExtra == null || tagExtra.isEmpty) && ev == null) {
       return e;
     }
     final meta = Map<String, dynamic>.from(e.metadata);
-    meta['tags'] = extra;
+    if (tagExtra != null && tagExtra.isNotEmpty) {
+      meta['tags'] = tagExtra;
+    }
+    if (ev != null) {
+      meta['isEvidence'] = ev;
+    }
     return CaseEvent(
       id: e.id,
       caseId: e.caseId,
@@ -99,16 +132,23 @@ class CaseEventService {
     );
   }
 
-  static TimelineEventModel _modelWithTags(
+  static TimelineEventModel _mergeTimelineOverlay(
     TimelineEventModel e,
     Map<String, List<String>> tags,
+    Map<String, bool> evidence,
   ) {
-    final extra = tags[e.id];
-    if (extra == null || extra.isEmpty) {
+    final tagExtra = tags[e.id];
+    final ev = evidence[e.id];
+    if ((tagExtra == null || tagExtra.isEmpty) && ev == null) {
       return e;
     }
     final meta = Map<String, dynamic>.from(e.metadata);
-    meta['tags'] = extra;
+    if (tagExtra != null && tagExtra.isNotEmpty) {
+      meta['tags'] = tagExtra;
+    }
+    if (ev != null) {
+      meta['isEvidence'] = ev;
+    }
     return TimelineEventModel(
       id: e.id,
       caseId: e.caseId,
@@ -133,7 +173,12 @@ class CaseEventService {
   static Future<List<CaseEvent>> fetchCaseEvents(String caseId) async {
     final snap = await _events.where('caseId', isEqualTo: caseId).get();
     final tags = await _fetchAnnotationTags(caseId);
-    final list = snap.docs.map(CaseEvent.fromDoc).map((e) => _caseEventWithTags(e, tags)).toList();
+    final tlSnap = await _caseTimelineCol(caseId).get();
+    final evidence = _evidenceFlagsByEventId(tlSnap);
+    final list = snap.docs
+        .map(CaseEvent.fromDoc)
+        .map((e) => _mergeCaseEventOverlay(e, tags, evidence))
+        .toList();
     list.sort((a, b) => a.createdAt.compareTo(b.createdAt));
     return list;
   }
@@ -142,9 +187,11 @@ class CaseEventService {
   static Future<List<TimelineEventModel>> fetchTimelineModels(String caseId) async {
     final snap = await _events.where('caseId', isEqualTo: caseId).get();
     final tags = await _fetchAnnotationTags(caseId);
+    final tlSnap = await _caseTimelineCol(caseId).get();
+    final evidence = _evidenceFlagsByEventId(tlSnap);
     final list = snap.docs
         .map(TimelineMapper.mapFromFirestore)
-        .map((e) => _modelWithTags(e, tags))
+        .map((e) => _mergeTimelineOverlay(e, tags, evidence))
         .toList();
     list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return list;
@@ -157,15 +204,17 @@ class CaseEventService {
     final controller = StreamController<List<CaseEvent>>.broadcast();
     QuerySnapshot<Map<String, dynamic>>? lastEv;
     QuerySnapshot<Map<String, dynamic>>? lastAnn;
+    QuerySnapshot<Map<String, dynamic>>? lastTl;
 
     void emit() {
       if (lastEv == null) {
         return;
       }
       final tagByEvent = _tagsByEventId(lastAnn);
+      final evidence = _evidenceFlagsByEventId(lastTl);
       final list = lastEv!.docs
           .map(CaseEvent.fromDoc)
-          .map((e) => _caseEventWithTags(e, tagByEvent))
+          .map((e) => _mergeCaseEventOverlay(e, tagByEvent, evidence))
           .toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
       controller.add(list);
@@ -173,6 +222,7 @@ class CaseEventService {
 
     late final StreamSubscription<QuerySnapshot<Map<String, dynamic>>> subEv;
     late final StreamSubscription<QuerySnapshot<Map<String, dynamic>>> subAnn;
+    late final StreamSubscription<QuerySnapshot<Map<String, dynamic>>> subTl;
 
     subEv = _events
         .where('caseId', isEqualTo: caseId)
@@ -190,9 +240,15 @@ class CaseEventService {
       emit();
     }, onError: controller.addError);
 
+    subTl = _caseTimelineCol(caseId).snapshots().listen((s) {
+      lastTl = s;
+      emit();
+    }, onError: controller.addError);
+
     controller.onCancel = () async {
       await subEv.cancel();
       await subAnn.cancel();
+      await subTl.cancel();
     };
 
     return controller.stream;
@@ -205,15 +261,17 @@ class CaseEventService {
     final controller = StreamController<List<TimelineEventModel>>.broadcast();
     QuerySnapshot<Map<String, dynamic>>? lastEv;
     QuerySnapshot<Map<String, dynamic>>? lastAnn;
+    QuerySnapshot<Map<String, dynamic>>? lastTl;
 
     void emit() {
       if (lastEv == null) {
         return;
       }
       final tagByEvent = _tagsByEventId(lastAnn);
+      final evidence = _evidenceFlagsByEventId(lastTl);
       final list = lastEv!.docs
           .map(TimelineMapper.mapFromFirestore)
-          .map((e) => _modelWithTags(e, tagByEvent))
+          .map((e) => _mergeTimelineOverlay(e, tagByEvent, evidence))
           .toList()
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
       controller.add(list);
@@ -221,6 +279,7 @@ class CaseEventService {
 
     late final StreamSubscription<QuerySnapshot<Map<String, dynamic>>> subEv;
     late final StreamSubscription<QuerySnapshot<Map<String, dynamic>>> subAnn;
+    late final StreamSubscription<QuerySnapshot<Map<String, dynamic>>> subTl;
 
     subEv = _events
         .where('caseId', isEqualTo: caseId)
@@ -238,9 +297,15 @@ class CaseEventService {
       emit();
     }, onError: controller.addError);
 
+    subTl = _caseTimelineCol(caseId).snapshots().listen((s) {
+      lastTl = s;
+      emit();
+    }, onError: controller.addError);
+
     controller.onCancel = () async {
       await subEv.cancel();
       await subAnn.cancel();
+      await subTl.cancel();
     };
 
     return controller.stream;

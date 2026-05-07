@@ -19,6 +19,20 @@ return ChildModel.fromMap(doc.id, doc.data());
 });
 }
 
+/// Single child document — use on Child Profile so edits sync immediately.
+static Stream<ChildModel?> watchChild(String caseId, String childId) {
+  return _db
+      .collection('cases')
+      .doc(caseId)
+      .collection('children')
+      .doc(childId)
+      .snapshots()
+      .map((doc) {
+        if (!doc.exists) return null;
+        return ChildModel.fromMap(doc.id, doc.data()!);
+      });
+}
+
 /// 🔥 CREATE CHILD (MAIN)
 static Future<void> createChild({
 required String caseId,
@@ -26,6 +40,9 @@ required String name,
 required DateTime dob,
 required String gender,
 String? medicalNotes,
+String? school,
+String? grade,
+String? activities,
 }) async {
 final ref = _db
 .collection("cases")
@@ -37,8 +54,12 @@ await ref.set({
 "name": name,
 "dob": Timestamp.fromDate(dob),
 "gender": gender,
+"school": school ?? "",
+"grade": grade ?? "",
+"activities": activities ?? "",
 "medicalNotes": medicalNotes ?? "",
 "createdAt": FieldValue.serverTimestamp(),
+"updatedAt": FieldValue.serverTimestamp(),
 });
 }
 
@@ -63,7 +84,10 @@ required String childId,
 required String name,
 required DateTime dob,
 required String gender,
-String? medicalNotes,
+required String school,
+required String grade,
+required String activities,
+required String medicalNotes,
 }) async {
 await _db
 .collection("cases")
@@ -74,7 +98,10 @@ await _db
 "name": name,
 "dob": Timestamp.fromDate(dob),
 "gender": gender,
-"medicalNotes": medicalNotes ?? "",
+"school": school,
+"grade": grade,
+"activities": activities,
+"medicalNotes": medicalNotes,
 "updatedAt": FieldValue.serverTimestamp(),
 });
 }

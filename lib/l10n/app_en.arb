@@ -717,6 +717,60 @@
   "dashboardCaseSubtitle_neutral": "Here's your case at a glance",
   "dashboardCaseSubtitle_professional": "Here's your case at a glance",
   "dashboardCaseSubtitle_legal": "Here's your case at a glance",
+  "dashboardPremiumHeadline_neutral": "Everything documented. No more arguments.",
+  "dashboardPremiumHeadline_professional": "Everything documented. No more arguments.",
+  "dashboardPremiumHeadline_legal": "Everything documented. No more arguments.",
+  "dashboardPremiumTagline_neutral": "Track expenses, messages, and custody schedules in one place.",
+  "dashboardPremiumTagline_professional": "Track expenses, messages, and custody schedules in one place.",
+  "dashboardPremiumTagline_legal": "Track expenses, messages, and custody schedules in one place.",
+  "messagesCardTitle_neutral": "Messages",
+  "messagesCardTitle_professional": "Messages",
+  "messagesCardTitle_legal": "Messages",
+  "messagesPreviewLoading_neutral": "Loading recent messages…",
+  "messagesPreviewLoading_professional": "Loading recent messages…",
+  "messagesPreviewLoading_legal": "Loading recent messages…",
+  "messagesPreviewEmpty_neutral": "No recent messages",
+  "messagesPreviewEmpty_professional": "No recent messages",
+  "messagesPreviewEmpty_legal": "No recent messages",
+  "messagesUnreadNone_neutral": "No unread messages",
+  "messagesUnreadNone_professional": "No unread messages",
+  "messagesUnreadNone_legal": "No unread messages",
+  "messagesUnreadOne_neutral": "1 unread message",
+  "messagesUnreadOne_professional": "1 unread message",
+  "messagesUnreadOne_legal": "1 unread message",
+  "messagesUnreadMany_neutral": "{count} unread messages",
+  "@messagesUnreadMany_neutral": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messagesUnreadMany_professional": "{count} unread messages",
+  "@messagesUnreadMany_professional": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messagesUnreadMany_legal": "{count} unread messages",
+  "@messagesUnreadMany_legal": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "balanceCardSecurePill_neutral": "All activity is securely documented",
+  "balanceCardSecurePill_professional": "All activity is securely documented",
+  "balanceCardSecurePill_legal": "All activity is securely documented",
+  "dashboardTrustBannerPrimary_neutral": "Every expense and message is recorded.",
+  "dashboardTrustBannerPrimary_professional": "Every expense and message is recorded.",
+  "dashboardTrustBannerPrimary_legal": "Every expense and message is recorded.",
+  "dashboardTrustBannerSecondary_neutral": "Export records anytime for court or mediation.",
+  "dashboardTrustBannerSecondary_professional": "Export records anytime for court or mediation.",
+  "dashboardTrustBannerSecondary_legal": "Export records anytime for court or mediation.",
   "addExpense_neutral": "+ Add Expense",
   "addExpense_professional": "Record expense",
   "addExpense_legal": "Document expense",
@@ -726,6 +780,9 @@
   "requestReimbursement_neutral": "Request reimbursement",
   "requestReimbursement_professional": "Request reimbursement",
   "requestReimbursement_legal": "Request reimbursement",
+  "requestPayment_neutral": "Request Payment",
+  "requestPayment_professional": "Request Payment",
+  "requestPayment_legal": "Request Payment",
   "noMessages_neutral": "No messages yet",
   "noMessages_professional": "No messages yet",
   "noMessages_legal": "No messages yet",
@@ -1122,12 +1179,12 @@
   "caseTimeline2_neutral": "Case Timeline2",
   "caseTimeline2_professional": "Case Timeline2",
   "caseTimeline2_legal": "Case Timeline2",
-  "mom_neutral": "Mom",
-  "mom_professional": "Mom",
-  "mom_legal": "Mom",
-  "dad_neutral": "Dad",
-  "dad_professional": "Dad",
-  "dad_legal": "Dad",
+  "mom_neutral": "Mother",
+  "mom_professional": "Mother",
+  "mom_legal": "Mother",
+  "dad_neutral": "Father",
+  "dad_professional": "Father",
+  "dad_legal": "Father",
   "guardian_neutral": "Guardian",
   "guardian_professional": "Guardian",
   "guardian_legal": "Guardian",
@@ -1185,9 +1242,9 @@
   "balanceUpdatedJustNow_neutral": "Updated just now",
   "balanceUpdatedJustNow_professional": "Updated just now",
   "balanceUpdatedJustNow_legal": "Updated just now",
-  "balanceUpdatedTodayIntro_neutral": "Updated today ·",
-  "balanceUpdatedTodayIntro_professional": "Updated today ·",
-  "balanceUpdatedTodayIntro_legal": "Updated today ·",
+  "balanceUpdatedTodayIntro_neutral": "Updated today •",
+  "balanceUpdatedTodayIntro_professional": "Updated today •",
+  "balanceUpdatedTodayIntro_legal": "Updated today •",
   "completeWorkspaceSetupToTrackBalances_neutral": "Complete workspace setup to track balances.",
   "completeWorkspaceSetupToTrackBalances_professional": "Complete workspace setup to track balances.",
   "completeWorkspaceSetupToTrackBalances_legal": "Complete workspace setup to track balances.",

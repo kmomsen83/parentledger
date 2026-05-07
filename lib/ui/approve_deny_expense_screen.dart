@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:parentledger/l10n/context_l10n.dart';
 import 'package:flutter/material.dart';
@@ -6,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../design/design.dart';
 import '../providers/case_context.dart';
 import '../services/case_expense_service.dart';
+import 'widgets/expense_receipt_fullscreen.dart';
 import 'widgets/trust_elements.dart';
 
 class ApproveDenyExpenseScreen extends StatefulWidget {
@@ -97,6 +99,7 @@ class _ApproveDenyExpenseScreenState extends State<ApproveDenyExpenseScreen> {
               : double.tryParse('$rawAmount') ?? 0.0;
           final description = (data['description'] ?? 'Expense').toString();
           final status = (data['status'] ?? 'unpaid').toString();
+          final receiptUrl = (data['receiptUrl'] ?? '').toString().trim();
 
           return SafeArea(
             child: Column(
@@ -137,6 +140,48 @@ class _ApproveDenyExpenseScreenState extends State<ApproveDenyExpenseScreen> {
                             ],
                           ),
                         ),
+                        if (receiptUrl.isNotEmpty) ...[
+                          const SizedBox(height: 16),
+                          Text(
+                            'Receipt',
+                            style: PLDesign.caption.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: PLDesign.textMuted,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          GestureDetector(
+                            onTap: () => openExpenseReceiptFullscreen(
+                              context,
+                              imageUrl: receiptUrl,
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: CachedNetworkImage(
+                                imageUrl: receiptUrl,
+                                height: 200,
+                                width: double.infinity,
+                                fit: BoxFit.cover,
+                                placeholder: (_, __) => Container(
+                                  height: 200,
+                                  color: PLDesign.surface,
+                                  alignment: Alignment.center,
+                                  child: const CircularProgressIndicator(),
+                                ),
+                                errorWidget: (_, __, ___) => Container(
+                                  height: 120,
+                                  color: PLDesign.surface,
+                                  alignment: Alignment.center,
+                                  child: Icon(
+                                    Icons.broken_image_outlined,
+                                    color: PLDesign.textMuted,
+                                    size: 40,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 16),
                         Text(
                           'Status changes are recorded for your case history.',

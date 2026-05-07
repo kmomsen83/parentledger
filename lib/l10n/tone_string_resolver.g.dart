@@ -347,6 +347,15 @@ String toneString(AppLocalizations loc, String key, UiTone tone) {
         case UiTone.legal:
           return loc.balance_legal;
       }
+    case 'balanceCardSecurePill':
+      switch (tone) {
+        case UiTone.neutral:
+          return loc.balanceCardSecurePill_neutral;
+        case UiTone.professional:
+          return loc.balanceCardSecurePill_professional;
+        case UiTone.legal:
+          return loc.balanceCardSecurePill_legal;
+      }
     case 'balanceRefreshing':
       switch (tone) {
         case UiTone.neutral:
@@ -1166,6 +1175,24 @@ String toneString(AppLocalizations loc, String key, UiTone tone) {
         case UiTone.legal:
           return loc.dashboardCaseSubtitle_legal;
       }
+    case 'dashboardPremiumHeadline':
+      switch (tone) {
+        case UiTone.neutral:
+          return loc.dashboardPremiumHeadline_neutral;
+        case UiTone.professional:
+          return loc.dashboardPremiumHeadline_professional;
+        case UiTone.legal:
+          return loc.dashboardPremiumHeadline_legal;
+      }
+    case 'dashboardPremiumTagline':
+      switch (tone) {
+        case UiTone.neutral:
+          return loc.dashboardPremiumTagline_neutral;
+        case UiTone.professional:
+          return loc.dashboardPremiumTagline_professional;
+        case UiTone.legal:
+          return loc.dashboardPremiumTagline_legal;
+      }
     case 'dashboardTimelineInsight':
       switch (tone) {
         case UiTone.neutral:
@@ -1174,6 +1201,24 @@ String toneString(AppLocalizations loc, String key, UiTone tone) {
           return loc.dashboardTimelineInsight_professional;
         case UiTone.legal:
           return loc.dashboardTimelineInsight_legal;
+      }
+    case 'dashboardTrustBannerPrimary':
+      switch (tone) {
+        case UiTone.neutral:
+          return loc.dashboardTrustBannerPrimary_neutral;
+        case UiTone.professional:
+          return loc.dashboardTrustBannerPrimary_professional;
+        case UiTone.legal:
+          return loc.dashboardTrustBannerPrimary_legal;
+      }
+    case 'dashboardTrustBannerSecondary':
+      switch (tone) {
+        case UiTone.neutral:
+          return loc.dashboardTrustBannerSecondary_neutral;
+        case UiTone.professional:
+          return loc.dashboardTrustBannerSecondary_professional;
+        case UiTone.legal:
+          return loc.dashboardTrustBannerSecondary_legal;
       }
     case 'date':
       switch (tone) {
@@ -2057,6 +2102,15 @@ String toneString(AppLocalizations loc, String key, UiTone tone) {
         case UiTone.legal:
           return loc.messagesCannotBeEditedTags_legal;
       }
+    case 'messagesCardTitle':
+      switch (tone) {
+        case UiTone.neutral:
+          return loc.messagesCardTitle_neutral;
+        case UiTone.professional:
+          return loc.messagesCardTitle_professional;
+        case UiTone.legal:
+          return loc.messagesCardTitle_legal;
+      }
     case 'messagesExchangesAndExpensesWill':
       switch (tone) {
         case UiTone.neutral:
@@ -2066,6 +2120,24 @@ String toneString(AppLocalizations loc, String key, UiTone tone) {
         case UiTone.legal:
           return loc.messagesExchangesAndExpensesWill_legal;
       }
+    case 'messagesPreviewEmpty':
+      switch (tone) {
+        case UiTone.neutral:
+          return loc.messagesPreviewEmpty_neutral;
+        case UiTone.professional:
+          return loc.messagesPreviewEmpty_professional;
+        case UiTone.legal:
+          return loc.messagesPreviewEmpty_legal;
+      }
+    case 'messagesPreviewLoading':
+      switch (tone) {
+        case UiTone.neutral:
+          return loc.messagesPreviewLoading_neutral;
+        case UiTone.professional:
+          return loc.messagesPreviewLoading_professional;
+        case UiTone.legal:
+          return loc.messagesPreviewLoading_legal;
+      }
     case 'messagesTimelineEvidenceSummariesAnd':
       switch (tone) {
         case UiTone.neutral:
@@ -2074,6 +2146,24 @@ String toneString(AppLocalizations loc, String key, UiTone tone) {
           return loc.messagesTimelineEvidenceSummariesAnd_professional;
         case UiTone.legal:
           return loc.messagesTimelineEvidenceSummariesAnd_legal;
+      }
+    case 'messagesUnreadNone':
+      switch (tone) {
+        case UiTone.neutral:
+          return loc.messagesUnreadNone_neutral;
+        case UiTone.professional:
+          return loc.messagesUnreadNone_professional;
+        case UiTone.legal:
+          return loc.messagesUnreadNone_legal;
+      }
+    case 'messagesUnreadOne':
+      switch (tone) {
+        case UiTone.neutral:
+          return loc.messagesUnreadOne_neutral;
+        case UiTone.professional:
+          return loc.messagesUnreadOne_professional;
+        case UiTone.legal:
+          return loc.messagesUnreadOne_legal;
       }
     case 'missedOverdueExchanges':
       switch (tone) {
@@ -2812,6 +2902,15 @@ String toneString(AppLocalizations loc, String key, UiTone tone) {
           return loc.reportExportIsAvailableIn_professional;
         case UiTone.legal:
           return loc.reportExportIsAvailableIn_legal;
+      }
+    case 'requestPayment':
+      switch (tone) {
+        case UiTone.neutral:
+          return loc.requestPayment_neutral;
+        case UiTone.professional:
+          return loc.requestPayment_professional;
+        case UiTone.legal:
+          return loc.requestPayment_legal;
       }
     case 'requestReimbursement':
       switch (tone) {
@@ -3917,5 +4016,16 @@ String toneBalanceMinutes(AppLocalizations loc, int minutes, UiTone tone) {
       return loc.balanceUpdatedMinutesAgo_professional(minutes);
     case UiTone.legal:
       return loc.balanceUpdatedMinutesAgo_legal(minutes);
+  }
+}
+
+String toneMessagesUnreadMany(AppLocalizations loc, int count, UiTone tone) {
+  switch (tone) {
+    case UiTone.neutral:
+      return loc.messagesUnreadMany_neutral(count);
+    case UiTone.professional:
+      return loc.messagesUnreadMany_professional(count);
+    case UiTone.legal:
+      return loc.messagesUnreadMany_legal(count);
   }
 }

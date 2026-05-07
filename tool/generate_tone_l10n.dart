@@ -202,6 +202,18 @@ void _writeResolver(Directory root, {required String enPath}) {
     ..writeln('    case UiTone.legal:')
     ..writeln('      return loc.balanceUpdatedMinutesAgo_legal(minutes);')
     ..writeln('  }')
+    ..writeln('}')
+    ..writeln()
+    ..writeln(
+        'String toneMessagesUnreadMany(AppLocalizations loc, int count, UiTone tone) {')
+    ..writeln('  switch (tone) {')
+    ..writeln('    case UiTone.neutral:')
+    ..writeln('      return loc.messagesUnreadMany_neutral(count);')
+    ..writeln('    case UiTone.professional:')
+    ..writeln('      return loc.messagesUnreadMany_professional(count);')
+    ..writeln('    case UiTone.legal:')
+    ..writeln('      return loc.messagesUnreadMany_legal(count);')
+    ..writeln('  }')
     ..writeln('}');
 
   File('${root.path}/lib/l10n/tone_string_resolver.g.dart')

@@ -160,7 +160,15 @@ class _SignupScreenState extends State<SignupScreen> {
                     style: const TextStyle(color: Colors.white),
                     decoration: _fieldDecoration('Email (optional)'),
                   ),
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Your parenting role',
+                    style: PLDesign.body.copyWith(
+                      color: Colors.white70,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   InputDecorator(
                     decoration: _roleDecoration,
                     child: DropdownButtonHideUnderline(
@@ -171,7 +179,7 @@ class _SignupScreenState extends State<SignupScreen> {
                         style: const TextStyle(color: Colors.white),
                         iconEnabledColor: Colors.white70,
                         hint: const Text(
-                          'Select role',
+                          'Mother, Father, or Guardian',
                           style: TextStyle(color: Colors.white54),
                         ),
                         items: [

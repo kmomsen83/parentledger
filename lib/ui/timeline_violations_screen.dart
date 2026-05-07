@@ -11,6 +11,7 @@ import '../providers/case_context.dart';
 import '../util/subscription_gate.dart';
 import '../models/case_event.dart';
 import '../services/case_event_service.dart';
+import '../services/case_timeline_service.dart';
 import '../services/export_service.dart';
 import '../services/timeline_violation_filter.dart';
 import 'widgets/attorney_case_switcher.dart';
@@ -45,7 +46,15 @@ class _TimelineViolationsScreenState extends State<TimelineViolationsScreen> {
     }
   }
 
-  Future<void> _markEvidence() => _bulkTag('evidence');
+  Future<void> _markEvidence() async {
+    for (final id in _selected) {
+      await CaseTimelineService.setEvidenceFlag(
+        caseId: widget.caseId,
+        eventId: id,
+        isEvidence: true,
+      );
+    }
+  }
 
   Future<void> _exportSelected(List<CaseEvent> selected) async {
     final rows = selected.map((e) {
@@ -57,7 +66,7 @@ class _TimelineViolationsScreenState extends State<TimelineViolationsScreen> {
         description:
             TimelineViolationFilter.previewLine(uiType.isNotEmpty ? uiType : 'violation_flagged', meta),
         tags: List<String>.from(meta['tags'] ?? const []),
-        evidence:
+        evidence: meta['isEvidence'] == true ||
             List<String>.from(meta['tags'] ?? const []).contains('evidence'),
       );
     }).toList();
@@ -104,6 +113,12 @@ class _TimelineViolationsScreenState extends State<TimelineViolationsScreen> {
               onPressed: () async {
                 await _markEvidence();
                 if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Marked as evidence'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
                 setState(() {
                   _selectMode = false;
                   _selected.clear();

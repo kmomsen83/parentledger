@@ -14,6 +14,7 @@ class TimelinePresentation {
   // ---------------------------------------------------------------------------
 
   static String timelineUiType(TimelineEventModel e) {
+    if (e.type == CaseEventTypes.checkIn) return 'check_in';
     if (e.isMessageLike) return 'message_sent';
     if (e.isExpenseLike) return 'expense_added';
     if (e.isScheduleLike) return 'exchange_scheduled';
@@ -73,6 +74,7 @@ class TimelinePresentation {
       case 'exchange_completed':
       case 'exchange_checkin_completed':
       case 'exchange_missed':
+      case 'check_in':
         return TimelineDisplayCategory.exchange;
       default:
         return TimelineDisplayCategory.message;
@@ -95,6 +97,9 @@ class TimelinePresentation {
   static String? headlineForRawType(String rawType) {
     if (rawType == 'exchange_checkin_completed') {
       return 'Exchange Check-In Completed';
+    }
+    if (rawType == 'check_in') {
+      return 'Location Check-In';
     }
     return null;
   }
@@ -193,6 +198,17 @@ class TimelinePresentation {
         return lines.join('\n');
       case 'exchange_missed':
         return 'Scheduled exchange was not completed as logged.';
+      case 'check_in':
+        final lines = <String>[];
+        final ex = m['linkedExchangeId']?.toString().trim() ?? '';
+        if (ex.isNotEmpty) {
+          lines.add('Linked to exchange');
+        }
+        final acc = m['accuracy'] ?? m['locationAccuracy'];
+        if (acc != null) {
+          lines.add('GPS accuracy ±${(acc as num).toStringAsFixed(0)} m');
+        }
+        return lines.isEmpty ? 'Verified location event.' : lines.join('\n');
       default:
         final preview = m['preview']?.toString();
         if (preview != null && preview.isNotEmpty) return preview;

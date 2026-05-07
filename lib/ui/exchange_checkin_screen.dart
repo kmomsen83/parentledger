@@ -13,6 +13,7 @@ import 'package:intl/intl.dart';
 import '../design/design.dart';
 import '../models/exchange_checkin_record.dart';
 import '../models/exchange_model.dart';
+import '../services/custody_risk_insights_service.dart';
 import '../services/exchange_checkin_service.dart';
 import '../services/location_service.dart';
 import '../util/device_info_helper.dart';
@@ -154,6 +155,8 @@ class _ExchangeCheckinScreenState extends State<ExchangeCheckinScreen> {
       'userId': uid,
       'timestamp': FieldValue.serverTimestamp(),
     });
+
+    unawaited(CustodyRiskInsightsService.refresh(widget.caseId));
   }
 
   Future<void> _runScheduledGateLocation() async {

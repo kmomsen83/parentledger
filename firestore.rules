@@ -26,6 +26,61 @@ service cloud.firestore {
       return userDocExists() ? userData().get('caseId', '') : '';
     }
 
+    /// [peerId]'s canonical `users/{peerId}.caseId` — only valid when that document exists.
+    function peerUserCaseId(peerId) {
+      return get(/databases/$(database)/documents/users/$(peerId)).data.get('caseId', '');
+    }
+
+    /// Read another party's `/users/{peerId}` for display names, avatars, and attorney client directory.
+    /// Requires a shared matter (participant or linked counsel) via their caseId **or** your own case roster.
+    function canReadUserProfile(peerId) {
+      return signedIn()
+        && peerId is string
+        && peerId.size() > 0
+        && (
+          (
+            exists(/databases/$(database)/documents/users/$(peerId))
+            && peerUserCaseId(peerId) != ''
+            && caseExists(peerUserCaseId(peerId))
+            && (
+              isParticipant(peerUserCaseId(peerId))
+              || isAttorneyLinkedToCase(peerUserCaseId(peerId))
+            )
+          )
+          || (
+            userDocExists()
+            && userCaseId() != ''
+            && caseExists(userCaseId())
+            && peerId in caseParticipantIds(userCaseId())
+          )
+        );
+    }
+
+    /// In-app notifications: clients write to teammates' `notifications/{recipient}/items/...`
+    /// (see [NotificationService._notifyCaseMembers]).
+    function validCaseNotificationItemCreate(recipientUid) {
+      let d = request.resource.data;
+      let tsOk = !('createdAt' in d) || d.createdAt is timestamp;
+      let metaOk = !('metadata' in d) || d.metadata is map;
+      return d.caseId is string
+        && caseExists(d.caseId)
+        && isParticipant(d.caseId)
+        && recipientUid in caseParticipantIds(d.caseId)
+        && d.type is string
+        && d.type.size() > 0
+        && d.type.size() <= 80
+        && d.title is string
+        && d.title.size() > 0
+        && d.title.size() <= 300
+        && d.body is string
+        && d.body.size() > 0
+        && d.body.size() <= 8000
+        && d.read == false
+        && tsOk
+        && metaOk
+        && d.keys().hasAll(['type', 'title', 'body', 'read', 'caseId']);
+    }
+
     function isAttorney() {
       return userDocExists() && userData().get('role', 'parent') == 'attorney';
     }
@@ -56,8 +111,15 @@ service cloud.firestore {
       return p.size() > 0 ? p : coMemberIds(data);
     }
 
+    /// `cases/{caseId}/members/{userId}` — explicit membership row (multi-user / migration-safe).
+    function hasCaseMembersDocument(caseId) {
+      return signedIn()
+        && caseExists(caseId)
+        && exists(/databases/$(database)/documents/cases/$(caseId)/members/$(request.auth.uid));
+    }
+
     /// True if the signed-in user belongs to this case (participant array, or user doc caseId,
-    /// or explicit caseMembers/{caseId_uid} link). Always requires auth + case exists.
+    /// explicit caseMembers/{caseId_uid} link, or cases/.../members/{uid}). Always requires auth + case exists.
     function isParticipant(caseId) {
       return signedIn()
         && caseExists(caseId)
@@ -65,6 +127,7 @@ service cloud.firestore {
           request.auth.uid in caseParticipantIds(caseId)
           || (userDocExists() && userCaseId() == caseId)
           || exists(/databases/$(database)/documents/caseMembers/$(caseId + "_" + request.auth.uid))
+          || hasCaseMembersDocument(caseId)
         );
     }
 
@@ -89,91 +152,129 @@ service cloud.firestore {
         && ledgerCaseRead(resource.data.caseId);
     }
 
-    /// Read/mutate case-scoped data only for authenticated participants.
+    function validCaseDocumentCategory(c) {
+      return c in ['court_order', 'filing', 'evidence', 'agreement'];
+    }
+
+    /// Immutable uploads under `cases/{caseId}/documents` — parents + linked attorneys.
+    function validCaseDocumentCreate(caseId, data) {
+      return data.keys().hasAll([
+          'caseId',
+          'fileUrl',
+          'fileName',
+          'uploadedBy',
+          'role',
+          'title',
+          'category',
+          'immutable',
+          'createdAt',
+          'storagePath'
+        ])
+        && data.caseId == caseId
+        && data.uploadedBy == request.auth.uid
+        && data.immutable == true
+        && validCaseDocumentCategory(data.category)
+        && data.role in ['coparent', 'attorney']
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 500
+        && data.fileName is string && data.fileName.size() > 0 && data.fileName.size() <= 500
+        && data.fileUrl is string && data.fileUrl.size() > 0 && data.fileUrl.size() <= 2500
+        && data.storagePath is string && data.storagePath.size() > 10 && data.storagePath.size() < 700
+        && data.createdAt is timestamp
+        && (
+          (!('notes' in data))
+          || (data.notes is string && data.notes.size() <= 8000)
+        )
+        && (
+          (userData().get('role', 'parent') != 'attorney' && data.role == 'coparent')
+          || (
+            userData().get('role', 'parent') == 'attorney'
+            && data.role == 'attorney'
+            && isAttorneyLinkedToCase(caseId)
+          )
+        );
+    }
+
+    function caseDocumentSupersedeKeysOnly(next, prev) {
+      return prev.get('immutable', false) == true
+        && next.get('immutable', false) == true
+        && prev.uploadedBy == next.uploadedBy
+        && next.diff(prev).affectedKeys().hasOnly(['supersededByDocId', 'supersededAt']);
+    }
+
+    /// Read/mutate case-scoped data for authenticated participants.
+    /// Do **not** require `users/{uid}` to exist first: bootstrap races (especially new devices)
+    /// left users blocked from cases where they are already in `memberIds`.
     function canAccessCase(caseId) {
-      return signedIn()
-        && userDocExists()
-        && isParticipant(caseId);
+      return signedIn() && isParticipant(caseId);
     }
 
     function canMutateCaseData(caseId) {
       return canAccessCase(caseId) && !isAttorney();
     }
 
-    function isUnexpiredInvite(inviteData) {
-      return !('expiresAt' in inviteData) || inviteData.expiresAt is timestamp && inviteData.expiresAt > request.time;
-    }
-
     function validExpenseStatus(status) {
       return status in ['unpaid', 'paid', 'denied', 'pending'];
     }
 
-    function validExpenseCreateShape() {
-      return request.resource.data.amount is number
-        && request.resource.data.amount > 0
-        && request.resource.data.description is string
-        && request.resource.data.description.size() > 0
-        && request.resource.data.createdBy == request.auth.uid
-        && request.resource.data.paid is bool
-        && validExpenseStatus(request.resource.data.status)
+    /// Pass `request.resource.data` and `resource.data` from the calling rule (helpers cannot use `request`).
+    function validExpenseUpdateShape(next, prev) {
+      return next.amount == prev.amount
+        && next.description == prev.description
+        && next.createdBy == prev.createdBy
+        && next.createdAt == prev.createdAt
+        && next.paid is bool
+        && validExpenseStatus(next.status)
         && (
-          (request.resource.data.paid == true && request.resource.data.status == 'paid')
-          || (request.resource.data.paid == false && request.resource.data.status in ['unpaid', 'denied', 'pending'])
+          (next.paid == true && next.status == 'paid')
+          || (next.paid == false && next.status in ['unpaid', 'denied', 'pending'])
         );
     }
 
-    function validExpenseUpdateShape() {
-      return request.resource.data.amount == resource.data.amount
-        && request.resource.data.description == resource.data.description
-        && request.resource.data.createdBy == resource.data.createdBy
-        && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.paid is bool
-        && validExpenseStatus(request.resource.data.status)
-        && (
-          (request.resource.data.paid == true && request.resource.data.status == 'paid')
-          || (request.resource.data.paid == false && request.resource.data.status in ['unpaid', 'denied', 'pending'])
-        );
-    }
-
-    function expenseMutableKeysOnly() {
-      return request.resource.data.diff(resource.data).affectedKeys()
+    function expenseMutableKeysOnly(next, prev) {
+      return next.diff(prev).affectedKeys()
         .hasOnly(['paid', 'status', 'updatedAt']);
     }
 
     /// Case thread message body + sender + time are immutable after create.
-    function caseThreadMessageMutableKeysOnly() {
-      return request.resource.data.diff(resource.data).affectedKeys()
+    function caseThreadMessageMutableKeysOnly(next, prev) {
+      return next.diff(prev).affectedKeys()
         .hasOnly(['isRead', 'tags', 'important', 'markedAsEvidence']);
     }
 
-    function validCaseThreadMessageCreate() {
-      return request.resource.data.senderId == request.auth.uid
-        && request.resource.data.senderId is string
-        && request.resource.data.type == 'text'
-        && request.resource.data.text is string
-        && request.resource.data.text.size() > 0
-        && request.resource.data.text.size() <= 12000
-        && request.resource.data.immutable == true
-        && request.resource.data.keys().hasAll(['senderId', 'createdAt', 'text', 'type', 'immutable'])
-        && request.resource.data.keys().hasOnly([
-          'senderId',
-          'createdAt',
-          'text',
-          'type',
-          'immutable',
-          'editedAt',
-          'isRead',
-          'attachments',
-          'tags',
-          'legalFlag',
-          'important',
-          'markedAsEvidence',
-        ]);
+    function validMessageSubtype(s) {
+      return s is string && s.size() > 0 && s.size() <= 64;
     }
 
-    function caseConversationEnvelopeMutableKeysOnly() {
-      return request.resource.data.diff(resource.data).affectedKeys()
-        .hasOnly(['caseId', 'title', 'memberIds', 'lastMessagePreview', 'lastSenderId', 'updatedAt']);
+    /// Core checks only — avoid `keys().hasOnly(...)` so Android/iOS clients can add
+    /// forward-compatible metadata fields without divergent denials.
+    function validCaseThreadMessageCreate(data, uid) {
+      return data.senderId == uid
+        && data.senderId is string
+        && data.type == 'text'
+        && data.text is string
+        && data.text.size() > 0
+        && data.text.size() <= 12000
+        && data.immutable == true
+        && (!('messageSubtype' in data)
+          || validMessageSubtype(data.messageSubtype))
+        && data.keys().hasAll(['senderId', 'createdAt', 'text', 'type', 'immutable']);
+    }
+
+    // Conversation merges: core fields plus optional keys some builds or CF may set.
+    function caseConversationEnvelopeMutableKeysOnly(next, prev) {
+      return next.diff(prev).affectedKeys()
+        .hasOnly([
+          'caseId',
+          'title',
+          'memberIds',
+          'lastMessagePreview',
+          'lastSenderId',
+          'updatedAt',
+          'conversationId',
+          'pinnedThread',
+          'mutedBy',
+          'lastMessageAt',
+        ]);
     }
 
     // -------------------------------------------------------------------------
@@ -197,23 +298,55 @@ service cloud.firestore {
     }
 
     match /caseInvites/{inviteId} {
-      allow get, list: if signedIn();
-      allow create: if signedIn()
-        && request.resource.data.createdBy == request.auth.uid
-        && request.resource.data.status == 'pending'
-        && request.resource.data.caseId is string
-        && isParticipant(request.resource.data.caseId)
-        && request.resource.data.role in ['coparent', 'attorney']
-        && request.resource.data.token is string
-        && request.resource.data.token.size() >= 20
-        && request.resource.data.maxUses is int
-        && request.resource.data.maxUses >= 1
-        && request.resource.data.uses == 0
-        && request.resource.data.expiresAt is timestamp
-        && request.resource.data.expiresAt > request.time;
+      function caseInviteReader() {
+        return resource.data.get('createdBy', '') == request.auth.uid
+          || resource.data.get('fromUserId', '') == request.auth.uid
+          || (
+            resource.data.caseId is string
+            && ledgerCaseRead(resource.data.caseId)
+          );
+      }
 
-      /// Status / use counters can only be changed by callable backend.
-      allow update, delete: if false;
+      function caseInviteTokenCreate() {
+        return request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.status == 'pending'
+          && request.resource.data.caseId is string
+          && isParticipant(request.resource.data.caseId)
+          && request.resource.data.role in ['coparent', 'attorney']
+          && request.resource.data.token is string
+          && request.resource.data.token.size() >= 20
+          && request.resource.data.maxUses is int
+          && request.resource.data.maxUses >= 1
+          && request.resource.data.uses == 0
+          && request.resource.data.expiresAt is timestamp
+          && request.resource.data.expiresAt > request.time;
+      }
+
+      /// SMS / share link invites (no RevenueCat-style token).
+      function caseInvitePhoneCreate() {
+        return request.resource.data.fromUserId == request.auth.uid
+          && request.resource.data.status == 'pending'
+          && request.resource.data.caseId is string
+          && isParticipant(request.resource.data.caseId)
+          && request.resource.data.role == 'coparent'
+          && request.resource.data.toPhone is string
+          && request.resource.data.expiresAt is timestamp
+          && request.resource.data.expiresAt > request.time;
+      }
+
+      allow read: if signedIn() && caseInviteReader();
+
+      allow create: if signedIn()
+        && request.resource.data.caseId is string
+        && (caseInviteTokenCreate() || caseInvitePhoneCreate());
+
+      allow update: if false;
+
+      allow delete: if signedIn()
+        && (
+          resource.data.get('createdBy', '') == request.auth.uid
+          || resource.data.get('fromUserId', '') == request.auth.uid
+        );
     }
 
     match /invites/{inviteId} {
@@ -225,28 +358,76 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
+    // Short coparent invite codes — managed only by Cloud Functions (Admin SDK).
+    match /coparentInviteCodes/{code} {
+      allow read, write: if false;
+    }
+
     // -------------------------------------------------------------------------
     // users
     // -------------------------------------------------------------------------
 
     match /users/{userId} {
-      allow read: if isSelf(userId);
+      function userAccessLevelOk() {
+        let al = request.resource.data.get('accessLevel', 'free');
+        return al == 'free' || al == 'subscription' || al == 'lifetime';
+      }
+
+      /// Parent ↔ attorney only (future multi-role could extend this list).
+      function userPrimaryRoleOk() {
+        let prev = resource.data.get('role', 'parent');
+        let next = request.resource.data.get('role', 'parent');
+        return next == prev
+          || (prev == 'parent' && next == 'attorney')
+          || (prev == 'attorney' && next == 'parent');
+      }
+
+      /// Mom/dad/guardian when parent; unchanged while switching to attorney.
+      function userParentTypeOk() {
+        let nextRole = request.resource.data.get('role', 'parent');
+        let ptPrev = resource.data.get('parentType', 'mom');
+        let ptNext = request.resource.data.get('parentType', ptPrev);
+        return (nextRole == 'attorney' && ptNext == ptPrev)
+          || (nextRole == 'parent' && ptNext in ['mom', 'dad', 'guardian']);
+      }
+
+      allow read: if isSelf(userId) || canReadUserProfile(userId);
       // isPremium is server-managed only (RevenueCat webhook / Admin SDK). Client may never set true.
       allow create: if isSelf(userId)
         && request.resource.data.get('isPremium', false) == false
         && request.resource.data.get('role', 'parent') == 'parent'
         && request.resource.data.get('parentType', 'mom') in ['mom', 'dad', 'guardian']
-        && request.resource.data.get('accessLevel', 'free') in ['free', 'subscription']
+        && request.resource.data.get('accessLevel', 'free') in ['free', 'subscription', 'lifetime']
         && request.resource.data.get('subscriptionTier', 'free') in ['free', 'pro'];
       allow update: if isSelf(userId)
         && request.resource.data.get('isPremium', false) == resource.data.get('isPremium', false)
-        && request.resource.data.get('role', 'parent') == resource.data.get('role', 'parent')
-        && request.resource.data.get('parentType', 'mom') == resource.data.get('parentType', 'mom')
-        && request.resource.data.get('accessLevel', 'free') == resource.data.get('accessLevel', 'free')
+        && userPrimaryRoleOk()
+        && userParentTypeOk()
+        && userAccessLevelOk()
         && request.resource.data.get('subscriptionTier', 'free') == resource.data.get('subscriptionTier', 'free')
         && request.resource.data.get('caseId', '') == resource.data.get('caseId', '')
         && request.resource.data.get('mergeFromCaseId', '') == resource.data.get('mergeFromCaseId', '');
       allow delete: if false;
+
+      /// User-owned PDFs (custody court summaries). Storage: `users/{uid}/documents/{id}.pdf`.
+      /// Counsel with `users/{auth.uid}/cases/{caseId}` may read a party's summary for that matter.
+      match /documents/{docId} {
+        allow read: if isSelf(userId)
+          || (
+            signedIn()
+            && resource.data.keys().hasAll(['caseId', 'type', 'fileUrl'])
+            && resource.data.type == 'court_summary'
+            && resource.data.caseId is string
+            && resource.data.caseId.size() > 0
+            && isAttorneyLinkedToCase(resource.data.caseId)
+          );
+        allow create: if isSelf(userId)
+          && request.resource.data.keys().hasAll(['fileUrl', 'createdAt', 'type'])
+          && request.resource.data.type == 'court_summary'
+          && request.resource.data.fileUrl is string
+          && request.resource.data.caseId is string;
+        allow update, delete: if false;
+      }
 
       /// Attorney (and future multi-case) links under the user profile.
       /// Must be readable by that user only — [CaseSwitcherService] listens here for
@@ -261,7 +442,10 @@ service cloud.firestore {
       allow read: if signedIn()
         && (
           resource.data.userId == request.auth.uid
-          || canAccessCase(resource.data.caseId)
+          || (
+            resource.data.caseId is string
+            && ledgerCaseRead(resource.data.caseId)
+          )
         );
       allow create, update, delete: if false;
     }
@@ -271,124 +455,225 @@ service cloud.firestore {
     // -------------------------------------------------------------------------
 
     match /cases/{caseId} {
-      allow read: if canAccessCase(caseId);
+      allow read: if ledgerCaseRead(caseId);
 
       allow create: if false;
 
+      /// Membership arrays must stay unchanged **unless** this write only touches custody
+      /// schedule fields (avoids merge/list-order quirks blocking custody saves).
+      function caseMembershipUnchanged() {
+        return request.resource.data.get('memberIds', []) == resource.data.get('memberIds', [])
+          && request.resource.data.get('parents', []) == resource.data.get('parents', []);
+      }
+
+      function custodyScheduleFieldsOnlyUpdate() {
+        return request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['custodyScheduleRule', 'custodyPattern', 'updatedAt']);
+      }
+
       allow update: if signedIn()
         && canMutateCaseData(caseId)
-        && request.resource.data.get('memberIds', []) == resource.data.get('memberIds', [])
-        && request.resource.data.get('parents', []) == resource.data.get('parents', []);
+        && (caseMembershipUnchanged() || custodyScheduleFieldsOnlyUpdate());
 
       allow delete: if false;
 
+      /// Canonical membership: doc id = [userId]. Read: any case participant. Write: that user
+      /// (profile on membership row) or any non-attorney participant (invites / admin-style updates).
       match /members/{memberId} {
-        allow read: if canAccessCase(caseId);
-        allow create, update, delete: if canMutateCaseData(caseId);
+        allow read: if ledgerCaseRead(caseId);
+        allow create, update, delete: if canMutateCaseData(caseId)
+          || (signedIn() && request.auth.uid == memberId && canAccessCase(caseId));
       }
 
       match /participants/{pid} {
-        allow read: if canAccessCase(caseId);
+        allow read: if ledgerCaseRead(caseId);
         allow write: if canMutateCaseData(caseId);
       }
 
       match /children/{childId} {
-        allow read: if canAccessCase(caseId);
+        allow read: if ledgerCaseRead(caseId);
         allow write: if canMutateCaseData(caseId);
 
         match /timeline/{tid} {
-          allow read: if canAccessCase(caseId);
+          allow read: if ledgerCaseRead(caseId);
           allow create: if canMutateCaseData(caseId);
           allow update, delete: if false;
         }
       }
 
       match /conversations/{cid} {
-        allow read: if canAccessCase(caseId);
+        allow read: if ledgerCaseRead(caseId);
         allow create: if canMutateCaseData(caseId);
         allow update: if canMutateCaseData(caseId)
-          && caseConversationEnvelopeMutableKeysOnly();
+          && caseConversationEnvelopeMutableKeysOnly(request.resource.data, resource.data);
         allow delete: if false;
 
         match /messages/{mid} {
-          allow read: if canAccessCase(caseId);
+          allow read: if ledgerCaseRead(caseId);
           allow create: if canMutateCaseData(caseId)
-            && validCaseThreadMessageCreate();
+            && validCaseThreadMessageCreate(request.resource.data, request.auth.uid);
           allow update: if canMutateCaseData(caseId)
-            && caseThreadMessageMutableKeysOnly();
+            && caseThreadMessageMutableKeysOnly(request.resource.data, resource.data);
           allow delete: if false;
         }
       }
 
+      /// Optional flat thread (same semantics as conversations/*/messages). Canonical path remains nested above.
+      match /messages/{mid} {
+        allow read: if ledgerCaseRead(caseId);
+        allow create: if canMutateCaseData(caseId)
+          && validCaseThreadMessageCreate(request.resource.data, request.auth.uid);
+        allow update: if canMutateCaseData(caseId)
+          && caseThreadMessageMutableKeysOnly(request.resource.data, resource.data);
+        allow delete: if false;
+      }
+
+      /// Nested negotiation proposals (optional; root `/proposals` is primary for the Flutter app).
+      match /proposals/{proposalId} {
+        allow read: if ledgerCaseRead(caseId);
+        allow create: if canMutateCaseData(caseId)
+          && (
+            !('caseId' in request.resource.data)
+            || request.resource.data.caseId == caseId
+          );
+        allow update: if canMutateCaseData(caseId)
+          && (
+            !('caseId' in request.resource.data)
+            || request.resource.data.caseId == caseId
+          );
+        allow delete: if false;
+      }
+
       match /timeline/{eid} {
-        allow read: if canAccessCase(caseId);
+        allow read: if ledgerCaseRead(caseId);
         allow create: if canMutateCaseData(caseId);
-        allow update, delete: if false;
+        /// Evidence overlay on ledger rows: doc id = `case_events` id; only `isEvidence` + `updatedAt`.
+        allow update: if canMutateCaseData(caseId)
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['isEvidence', 'updatedAt'])
+          && request.resource.data.isEvidence is bool;
+        allow delete: if false;
       }
 
       match /insights/{docId} {
-        allow read: if canAccessCase(caseId);
+        allow read: if ledgerCaseRead(caseId);
         allow write: if canMutateCaseData(caseId);
       }
 
       match /expenses/{eid} {
-        allow read: if canAccessCase(caseId);
+        allow read: if ledgerCaseRead(caseId);
         /// Created only via Cloud Function [createCaseExpense] (free-tier quota enforced server-side).
         allow create: if false;
         allow update: if canMutateCaseData(caseId)
-          && expenseMutableKeysOnly()
-          && validExpenseUpdateShape();
+          && expenseMutableKeysOnly(request.resource.data, resource.data)
+          && validExpenseUpdateShape(request.resource.data, resource.data);
         allow delete: if false;
       }
 
       match /exchanges/{eid} {
-        allow read: if canAccessCase(caseId);
+        allow read: if ledgerCaseRead(caseId);
         allow create, update: if canMutateCaseData(caseId);
         allow delete: if false;
 
         match /timeline/{tid} {
-          allow read: if canAccessCase(caseId);
+          allow read: if ledgerCaseRead(caseId);
           allow create: if canMutateCaseData(caseId);
           allow update, delete: if false;
         }
       }
 
       match /exchange_checkins/{cid} {
-        allow read: if canAccessCase(caseId);
+        allow read: if ledgerCaseRead(caseId);
         allow create: if canMutateCaseData(caseId);
         allow update, delete: if false;
       }
 
       match /legalSummaries/{sid} {
-        allow read: if canAccessCase(caseId);
+        allow read: if ledgerCaseRead(caseId);
         allow create: if canMutateCaseData(caseId);
         allow update, delete: if false;
       }
 
       match /documents/{docId} {
-        allow read: if canAccessCase(caseId);
-        allow create: if canMutateCaseData(caseId);
-        allow update, delete: if false;
+        allow read: if ledgerCaseRead(caseId);
+
+        allow create: if ledgerCaseRead(caseId)
+          && validCaseDocumentCreate(caseId, request.resource.data);
+
+        allow update: if ledgerCaseRead(caseId)
+          && resource.data.get('immutable', false) == true
+          && request.resource.data.get('immutable', false) == true
+          && !isAttorney()
+          && isParticipant(caseId)
+          && caseDocumentSupersedeKeysOnly(request.resource.data, resource.data)
+          && request.resource.data.supersededByDocId is string
+          && request.resource.data.supersededAt is timestamp;
+
+        allow delete: if ledgerCaseRead(caseId)
+          && resource.data.uploadedBy == request.auth.uid;
       }
 
       match /recurring_patterns/{rid} {
-        allow read: if canAccessCase(caseId);
+        allow read: if ledgerCaseRead(caseId);
         allow write: if canMutateCaseData(caseId);
       }
 
+      /// Per-day custody overrides for the calendar planner (`dateKey` = yyyy-MM-dd).
+      match /custody_schedule_overrides/{dayKey} {
+        allow read: if ledgerCaseRead(caseId);
+        allow create, update: if canMutateCaseData(caseId);
+        allow delete: if canMutateCaseData(caseId);
+      }
+
+      /// Holiday custody overrides (`documentId` = local yyyy-MM-dd; `date` is calendar anchor).
+      match /holidays/{holidayId} {
+        allow read: if ledgerCaseRead(caseId);
+        allow create, update: if canMutateCaseData(caseId);
+        allow delete: if canMutateCaseData(caseId);
+      }
+
+      /// Swap / time-change proposals for holidays (holidayId = holidays/{docId}).
+      match /holiday_proposals/{proposalId} {
+        allow read: if ledgerCaseRead(caseId);
+
+        allow create: if canMutateCaseData(caseId)
+          && request.resource.data.proposedBy == request.auth.uid
+          && request.resource.data.id == proposalId
+          && request.resource.data.holidayId is string
+          && request.resource.data.targetParentId is string
+          && request.resource.data.newParentId is string
+          && request.resource.data.status == 'pending';
+
+        /// Resolve transitions without relying only on `diff().affectedKeys()` (merge/update quirks across SDKs).
+        allow update: if canMutateCaseData(caseId)
+          && resource.data.status == 'pending'
+          && request.resource.data.status in ['accepted', 'denied']
+          && request.resource.data.proposedBy == resource.data.proposedBy
+          && request.resource.data.holidayId == resource.data.holidayId
+          && request.resource.data.targetParentId == resource.data.targetParentId
+          && request.resource.data.newParentId == resource.data.newParentId
+          && (
+            resource.data.targetParentId == request.auth.uid
+            || (
+              request.resource.data.status == 'denied'
+              && resource.data.proposedBy == request.auth.uid
+            )
+          );
+      }
+
       match /events/{eid} {
-        allow read: if canAccessCase(caseId);
+        allow read: if ledgerCaseRead(caseId);
         allow create: if canMutateCaseData(caseId);
         allow update, delete: if false;
       }
 
       match /violations/{vid} {
-        allow read: if canAccessCase(caseId);
+        allow read: if ledgerCaseRead(caseId);
         allow write: if canMutateCaseData(caseId);
       }
 
       match /locations/{lid} {
-        allow read: if canAccessCase(caseId);
+        allow read: if ledgerCaseRead(caseId);
         allow create: if canMutateCaseData(caseId)
           && request.resource.data.createdBy == request.auth.uid;
         allow update, delete: if false;
@@ -397,7 +682,9 @@ service cloud.firestore {
 
     /// Legacy unified timeline rows — **append-only from Cloud Functions** (use logCaseEvent).
     match /caseEvents/{eventId} {
-      allow read: if isParticipant(resource.data.caseId);
+      allow read: if resource.data.keys().hasAll(['caseId'])
+        && resource.data.caseId is string
+        && ledgerCaseRead(resource.data.caseId);
       allow create, update, delete: if false;
     }
 
@@ -470,8 +757,9 @@ service cloud.firestore {
         return get(/databases/$(database)/documents/proposals/$(proposalId)).data.status in ['pending', 'negotiating'];
       }
 
+      /// `title` may be missing on legacy rows — client defaults; do not require it or queries fail.
       allow read: if signedIn()
-        && resource.data.keys().hasAll(['caseId', 'createdBy', 'status', 'title'])
+        && resource.data.keys().hasAll(['caseId', 'createdBy', 'status'])
         && resource.data.caseId is string
         && ledgerCaseRead(resource.data.caseId);
 
@@ -541,6 +829,9 @@ service cloud.firestore {
     match /ai_cache/{docId} {
       function validAiCacheCreate() {
         let t = request.resource.data.type;
+        /// `createdAt: FieldValue.serverTimestamp()` may not satisfy `is timestamp` in rules on all clients.
+        let createdOk = !('createdAt' in request.resource.data)
+          || request.resource.data.createdAt is timestamp;
         return signedIn()
           && request.resource.data.userId == request.auth.uid
           && t in ['summary', 'fairness', 'compliance', 'tone']
@@ -548,7 +839,7 @@ service cloud.firestore {
           && request.resource.data.inputHash.size() > 0
           && request.resource.data.inputHash.size() <= 128
           && request.resource.data.result is map
-          && request.resource.data.createdAt is timestamp
+          && createdOk
           && docId == request.auth.uid + '_' + t + '_' + request.resource.data.inputHash;
       }
 
@@ -606,7 +897,7 @@ service cloud.firestore {
       match /items/{notificationId} {
         allow read: if signedIn() && userId == request.auth.uid;
         allow create: if signedIn()
-          && userId == request.auth.uid;
+          && (userId == request.auth.uid || validCaseNotificationItemCreate(userId));
         allow update: if signedIn() && userId == request.auth.uid;
         allow delete: if false;
       }

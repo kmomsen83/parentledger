@@ -3,6 +3,7 @@
  * Clients should call these callables instead of writing sensitive paths directly.
  */
 import * as admin from "firebase-admin";
+import { randomUUID } from "node:crypto";
 import sgMail from "@sendgrid/mail";
 import { FieldValue } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
@@ -26,6 +27,7 @@ export {
   detectViolations,
   generateCourtSummary,
 } from "./gemini_ai";
+export { smartAssistant } from "./smart_assistant";
 
 setGlobalOptions({ region: "us-central1", maxInstances: 10 });
 
@@ -48,6 +50,61 @@ function trimMax(s: string, max: number): string {
   return s.trim().slice(0, max);
 }
 
+/** Structured JSON logs for invite debugging (search logs for `invite_flow`). */
+function inviteStructuredLog(
+  event: string,
+  data: Record<string, unknown> = {}
+): void {
+  console.log(
+    JSON.stringify({
+      component: "invite_flow",
+      ts: Date.now(),
+      event,
+      ...data,
+    })
+  );
+}
+
+async function copyInviterDisplayToInvitee(
+  inviteeUid: string,
+  senderUid: string | undefined
+): Promise<void> {
+  if (!senderUid) {
+    return;
+  }
+  try {
+    const snap = await db.collection("users").doc(senderUid).get();
+    const ud = snap.data() ?? {};
+    let display = trimMax(String(ud["displayName"] ?? ""), 200);
+    if (!display.trim()) {
+      const fn = trimMax(String(ud["firstName"] ?? ""), 80);
+      const ln = trimMax(String(ud["lastName"] ?? ""), 80);
+      display = trimMax(`${fn} ${ln}`.trim(), 200);
+    }
+    if (!display.trim()) {
+      return;
+    }
+    await db.collection("users").doc(inviteeUid).set(
+      { inviterDisplayName: display.trim() },
+      { merge: true }
+    );
+  } catch (e) {
+    console.error("copyInviterDisplayToInvitee failed", { inviteeUid, senderUid, e });
+  }
+}
+
+const DEFAULT_COPARENT_INVITE_PERMISSIONS = {
+  messaging: true,
+  calendar: true,
+  proposals: true,
+  compromise: true,
+  sharedChildData: true,
+  read: true,
+  comment: true,
+  export: true,
+  write: true,
+};
+
 function normalizePhone(input: unknown): string {
   const raw = String(input ?? "");
   return raw.replace(/[^\d+]/g, "");
@@ -64,6 +121,15 @@ function asTrimmedString(input: unknown, max: number): string {
 async function findInviteByToken(
   token: string
 ): Promise<{ id: string; ref: admin.firestore.DocumentReference; data: Record<string, unknown> }> {
+  const byIdRef = db.collection("caseInvites").doc(token);
+  const byIdSnap = await byIdRef.get();
+  if (byIdSnap.exists) {
+    return {
+      id: byIdSnap.id,
+      ref: byIdRef,
+      data: (byIdSnap.data() ?? {}) as Record<string, unknown>,
+    };
+  }
   const snap = await db
     .collection("caseInvites")
     .where("token", "==", token)
@@ -78,6 +144,62 @@ async function findInviteByToken(
     ref: doc.ref,
     data: (doc.data() ?? {}) as Record<string, unknown>,
   };
+}
+
+type ResolvedTokenInvite =
+  | {
+      kind: "coparentInvite";
+      id: string;
+      ref: admin.firestore.DocumentReference;
+      data: Record<string, unknown>;
+    }
+  | {
+      kind: "caseInvite";
+      id: string;
+      ref: admin.firestore.DocumentReference;
+      data: Record<string, unknown>;
+    };
+
+async function resolveCoparentOrCaseInviteByToken(
+  token: string
+): Promise<ResolvedTokenInvite> {
+  const copRef = db.collection("coparentInvites").doc(token);
+  const copSnap = await copRef.get();
+  if (copSnap.exists) {
+    return {
+      kind: "coparentInvite",
+      id: token,
+      ref: copRef,
+      data: (copSnap.data() ?? {}) as Record<string, unknown>,
+    };
+  }
+  const legacy = await findInviteByToken(token);
+  return {
+    kind: "caseInvite",
+    id: legacy.id,
+    ref: legacy.ref,
+    data: legacy.data,
+  };
+}
+
+async function summarizeCaseChildrenForInvite(caseId: string): Promise<Array<{ name: string }>> {
+  if (!caseId) {
+    return [];
+  }
+  const snap = await db
+    .collection("cases")
+    .doc(caseId)
+    .collection("children")
+    .limit(24)
+    .get();
+  const out: Array<{ name: string }> = [];
+  for (const doc of snap.docs) {
+    const d = doc.data() ?? {};
+    let name =
+      trimMax(String(d["name"] ?? d["displayName"] ?? ""), 120) || "Child";
+    out.push({ name });
+  }
+  return out;
 }
 
 function toParentType(input: unknown): string {
@@ -483,6 +605,16 @@ export const completeSignup = onCall(async (request) => {
     throw new HttpsError("invalid-argument", "First and last name are required.");
   }
   const userRef = db.collection("users").doc(uid);
+  const priorSnap = await userRef.get();
+  const priorRole = String((priorSnap.data() as Record<string, unknown> | undefined)?.["role"] ?? "")
+    .trim()
+    .toLowerCase();
+  if (priorRole === "attorney") {
+    throw new HttpsError(
+      "failed-precondition",
+      "Attorney accounts use the counsel onboarding flow, not parent case setup."
+    );
+  }
   const caseRef = db.collection("cases").doc();
   const caseId = caseRef.id;
   const memberRef = caseRef.collection("members").doc(uid);
@@ -540,6 +672,41 @@ export const completeSignup = onCall(async (request) => {
   return { caseId };
 });
 
+/** Counsel profile completion — no custody case creation. */
+export const completeAttorneyOnboarding = onCall(async (request) => {
+  const uid = requireAuthUid(request);
+  const firstName = trimMax(String(request.data?.firstName ?? ""), 80);
+  const lastName = trimMax(String(request.data?.lastName ?? ""), 80);
+  const firmName = trimMax(String(request.data?.firmName ?? ""), 160);
+  const barNumber = trimMax(String(request.data?.barNumber ?? ""), 120);
+
+  if (!firstName || !lastName) {
+    throw new HttpsError("invalid-argument", "First and last name are required.");
+  }
+
+  const userRef = db.collection("users").doc(uid);
+  const snap = await userRef.get();
+  const role = String((snap.data() as Record<string, unknown> | undefined)?.["role"] ?? "")
+    .trim()
+    .toLowerCase();
+  if (role !== "attorney") {
+    throw new HttpsError("failed-precondition", "Account must be set to attorney before completing this step.");
+  }
+
+  await userRef.set(
+    {
+      firstName,
+      lastName,
+      firmName: firmName || null,
+      barNumber: barNumber || null,
+      onboardingStep: "onboarding_complete",
+      role: "attorney",
+    },
+    { merge: true }
+  );
+  return { ok: true };
+});
+
 /** Minimal user document when a user first lands (replaces client ensureUserDoc). */
 export const ensureUserBootstrap = onCall(async (request) => {
   const uid = requireAuthUid(request);
@@ -552,10 +719,8 @@ export const ensureUserBootstrap = onCall(async (request) => {
     }
     tx.set(userRef, {
       createdAt: FieldValue.serverTimestamp(),
-      onboardingStep: "new",
+      onboardingStep: "account_type",
       isPremium: false,
-      role: "parent",
-      parentType: "mom",
       accessLevel: "free",
       subscriptionTier: "free",
     });
@@ -804,14 +969,33 @@ export const createCaseInvite = onCall(async (request) => {
       type: "invite_sent",
       actorId: uid,
       title: "Invite sent",
-      description: `Co-parent invite created (${inviteRef.id}).`,
+      description:
+        roleValue === "attorney"
+          ? `Attorney invite created (${inviteRef.id}).`
+          : `Co-parent invite created (${inviteRef.id}).`,
       data: { inviteId: inviteRef.id, role: roleValue },
     });
   } catch (e) {
     console.error("case_events invite_sent", e);
   }
 
-  return { inviteId: inviteRef.id };
+  const inviteId = inviteRef.id;
+  const origin = "https://parentledger.org";
+  const universalLink =
+    roleValue === "attorney"
+      ? `${origin}/invite/attorney/${inviteId}`
+      : `${origin}/invite/${inviteId}`;
+  const deepLink =
+    roleValue === "attorney"
+      ? `parentledger://invite/attorney/${inviteId}`
+      : `parentledger://invite/${inviteId}`;
+
+  return {
+    inviteId,
+    token: inviteId,
+    universalLink,
+    deepLink,
+  };
 });
 
 export const validateInvite = onCall(async (request) => {
@@ -890,18 +1074,88 @@ export const validateInvite = onCall(async (request) => {
 
 /** Token-based validation used by invite deep links. */
 export const validateCaseInvite = onCall(async (request) => {
-  requireAuthUid(request);
+  const uid = requireAuthUid(request);
   const token = asTrimmedString(request.data?.token, 200);
   if (!token) {
     throw new HttpsError("invalid-argument", "token is required.");
   }
-  const invite = await findInviteByToken(token);
-  const status = String(invite.data["status"] ?? "pending");
-  const role = String(invite.data["role"] ?? "coparent");
-  const caseId = String(invite.data["caseId"] ?? "");
-  const uses = Number(invite.data["uses"] ?? 0);
-  const maxUses = Number(invite.data["maxUses"] ?? 1);
-  const expiresAt = invite.data["expiresAt"] as admin.firestore.Timestamp | undefined;
+  inviteStructuredLog("validate_case_invite_begin", {
+    tokenPrefix: token.slice(0, 8),
+    uid,
+  });
+  const resolved = await resolveCoparentOrCaseInviteByToken(token);
+
+  if (resolved.kind === "coparentInvite") {
+    const d = resolved.data;
+    const status = String(d["status"] ?? "pending");
+    const recipientStatus = String(d["recipientStatus"] ?? "pending");
+    const caseId = String(d["caseId"] ?? "");
+    const expiresAt = d["expiresAt"] as admin.firestore.Timestamp | undefined;
+    const senderUid = String(d["senderUid"] ?? "");
+
+    if (status !== "pending") {
+      throw new HttpsError("failed-precondition", "Invite already used.");
+    }
+    if (recipientStatus === "declined") {
+      throw new HttpsError("failed-precondition", "Invite was declined.");
+    }
+    if (expiresAt && expiresAt.toDate().getTime() <= Date.now()) {
+      await resolved.ref.set(
+        {
+          status: "expired",
+          recipientStatus: "expired",
+          expiredAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      throw new HttpsError("failed-precondition", "Invite expired.");
+    }
+
+    let fromDisplayName = "";
+    let fromPhotoUrl = "";
+    if (senderUid) {
+      const uSnap = await db.collection("users").doc(senderUid).get();
+      const ud = uSnap.data() ?? {};
+      fromDisplayName = trimMax(String(ud["displayName"] ?? ""), 200);
+      if (!fromDisplayName.trim()) {
+        const fn = trimMax(String(ud["firstName"] ?? ""), 80);
+        const ln = trimMax(String(ud["lastName"] ?? ""), 80);
+        fromDisplayName = trimMax(`${fn} ${ln}`.trim(), 200);
+      }
+      fromPhotoUrl = trimMax(
+        String(ud["photoURL"] ?? ud["photoUrl"] ?? ""),
+        800
+      );
+    }
+    const children = await summarizeCaseChildrenForInvite(caseId);
+    inviteStructuredLog("validate_case_invite_ok", {
+      inviteKind: "coparentFirestore",
+      caseId,
+      uid,
+      tokenPrefix: token.slice(0, 8),
+    });
+    return {
+      inviteKind: "coparentFirestore",
+      inviteId: token,
+      token,
+      caseId,
+      role: "coparent",
+      status,
+      recipientStatus,
+      fromDisplayName,
+      fromPhotoUrl,
+      children,
+      senderUid,
+    };
+  }
+
+  const invite = resolved.data;
+  const status = String(invite["status"] ?? "pending");
+  const role = String(invite["role"] ?? "coparent");
+  const caseId = String(invite["caseId"] ?? "");
+  const uses = Number(invite["uses"] ?? 0);
+  const maxUses = Number(invite["maxUses"] ?? 1);
+  const expiresAt = invite["expiresAt"] as admin.firestore.Timestamp | undefined;
   if (status !== "pending") {
     throw new HttpsError("failed-precondition", "Invite already used.");
   }
@@ -909,14 +1163,22 @@ export const validateCaseInvite = onCall(async (request) => {
     throw new HttpsError("failed-precondition", "Invite has no uses remaining.");
   }
   if (expiresAt && expiresAt.toDate().getTime() <= Date.now()) {
-    await invite.ref.set(
+    await resolved.ref.set(
       { status: "expired", expiredAt: FieldValue.serverTimestamp() },
       { merge: true }
     );
     throw new HttpsError("failed-precondition", "Invite expired.");
   }
+  inviteStructuredLog("validate_case_invite_ok", {
+    inviteKind: "caseInviteDoc",
+    caseId,
+    inviteDocId: resolved.id,
+    uid,
+    tokenPrefix: token.slice(0, 8),
+  });
   return {
-    inviteId: invite.id,
+    inviteKind: "caseInviteDoc",
+    inviteId: resolved.id,
     caseId,
     role,
     status,
@@ -925,18 +1187,11 @@ export const validateCaseInvite = onCall(async (request) => {
   };
 });
 
-/** Secure token acceptance: transactional case join + role assignment. */
-export const acceptCaseInvite = onCall(async (request) => {
-  const uid = requireAuthUid(request);
-  const token = asTrimmedString(request.data?.token, 200);
-  if (!token) {
-    throw new HttpsError("invalid-argument", "token is required.");
-  }
-  const found = await findInviteByToken(token);
-  const inviteRef = found.ref;
-  const inviteId = found.id;
-
-  const result = await db.runTransaction(async (tx) => {
+async function transactionAcceptLegacyCaseInviteToken(
+  uid: string,
+  inviteRef: admin.firestore.DocumentReference
+): Promise<{ caseId: string; role: string; alreadyMember: boolean }> {
+  return db.runTransaction(async (tx) => {
     const inviteSnap = await tx.get(inviteRef);
     if (!inviteSnap.exists) {
       throw new HttpsError("not-found", "Invite not found.");
@@ -1045,6 +1300,192 @@ export const acceptCaseInvite = onCall(async (request) => {
     );
     return { caseId, role, alreadyMember: false };
   });
+}
+
+async function transactionAcceptCoparentFirestoreInvite(
+  uid: string,
+  inviteRef: admin.firestore.DocumentReference
+): Promise<{ caseId: string; role: string; alreadyMember: boolean }> {
+  return db.runTransaction(async (tx) => {
+    const inviteSnap = await tx.get(inviteRef);
+    if (!inviteSnap.exists) {
+      throw new HttpsError("not-found", "Invite not found.");
+    }
+    const inv = (inviteSnap.data() ?? {}) as Record<string, unknown>;
+    const caseId = String(inv["caseId"] ?? "");
+    const senderUid = String(inv["senderUid"] ?? "");
+    const status = String(inv["status"] ?? "pending");
+    const recipientStatus = String(inv["recipientStatus"] ?? "pending");
+    const expiresAt = inv["expiresAt"] as admin.firestore.Timestamp | undefined;
+
+    if (!caseId) {
+      throw new HttpsError("failed-precondition", "Invite is missing caseId.");
+    }
+    if (senderUid && senderUid === uid) {
+      throw new HttpsError("invalid-argument", "You cannot accept your own invite.");
+    }
+    if (status !== "pending") {
+      throw new HttpsError("failed-precondition", "Invite already used.");
+    }
+    if (recipientStatus === "declined") {
+      throw new HttpsError("failed-precondition", "Invite was declined.");
+    }
+    if (expiresAt && expiresAt.toDate().getTime() <= Date.now()) {
+      tx.set(
+        inviteRef,
+        {
+          status: "expired",
+          recipientStatus: "expired",
+          expiredAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      throw new HttpsError("failed-precondition", "Invite expired.");
+    }
+
+    const role = "coparent";
+    const caseRef = db.collection("cases").doc(caseId);
+    const caseSnap = await tx.get(caseRef);
+    if (!caseSnap.exists) {
+      throw new HttpsError("not-found", "Case not found.");
+    }
+    const caseData = (caseSnap.data() ?? {}) as Record<string, unknown>;
+    const participants = (caseData["participants"] as string[] | undefined) ?? [];
+    const memberIds = (caseData[MEMBER_IDS] as string[] | undefined) ?? [];
+    const alreadyMember = participants.includes(uid) || memberIds.includes(uid);
+
+    const userRef = db.collection("users").doc(uid);
+    const userSnap = await tx.get(userRef);
+    const userData = userSnap.data();
+
+    const preRole = String(userData?.["role"] ?? "parent");
+    if (preRole === "attorney") {
+      throw new HttpsError(
+        "permission-denied",
+        "Attorney accounts cannot join via co-parent invite."
+      );
+    }
+
+    const existingCaseIdEarly = userData?.["caseId"] as string | undefined;
+    if (existingCaseIdEarly === caseId) {
+      return { caseId, role, alreadyMember: true };
+    }
+
+    if (alreadyMember) {
+      return { caseId, role, alreadyMember: true };
+    }
+
+    if (existingCaseIdEarly != null && existingCaseIdEarly !== caseId) {
+      tx.update(userRef, {
+        mergeFromCaseId: existingCaseIdEarly,
+      });
+    }
+
+    tx.set(
+      caseRef,
+      {
+        participants: FieldValue.arrayUnion(uid),
+        [MEMBER_IDS]: FieldValue.arrayUnion(uid),
+      },
+      { merge: true }
+    );
+    tx.set(
+      caseRef.collection("members").doc(uid),
+      {
+        userId: uid,
+        role: "parent",
+        joinedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+    tx.set(
+      caseRef.collection("caseMembers").doc(uid),
+      {
+        userId: uid,
+        role,
+        joinedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+    tx.set(
+      db.collection("caseMembers").doc(`${caseId}_${uid}`),
+      {
+        caseId,
+        userId: uid,
+        role: "parent",
+        permissions: {
+          read: true,
+          comment: true,
+          export: true,
+          write: true,
+        },
+        linkedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    tx.set(
+      userRef,
+      {
+        role: "parent",
+        caseId,
+        onboardingStep: "invite_context",
+        parentType: (userData?.["parentType"] as string | undefined) ?? "mom",
+        accessLevel: (userData?.["accessLevel"] as string | undefined) ?? "free",
+        subscriptionTier: (userData?.["subscriptionTier"] as string | undefined) ?? "free",
+      },
+      { merge: true }
+    );
+
+    tx.set(
+      inviteRef,
+      {
+        status: "accepted",
+        recipientStatus: "accepted",
+        used: true,
+        acceptedAt: FieldValue.serverTimestamp(),
+        acceptedByUid: uid,
+      },
+      { merge: true }
+    );
+
+    return { caseId, role, alreadyMember: false };
+  });
+}
+
+/** Secure token acceptance: transactional case join + role assignment. */
+export const acceptCaseInvite = onCall(async (request) => {
+  const uid = requireAuthUid(request);
+  const token = asTrimmedString(request.data?.token, 200);
+  if (!token) {
+    throw new HttpsError("invalid-argument", "token is required.");
+  }
+  const resolved = await resolveCoparentOrCaseInviteByToken(token);
+  let result: { caseId: string; role: string; alreadyMember: boolean };
+  let ledgerInviteId = token;
+
+  if (resolved.kind === "coparentInvite") {
+    result = await transactionAcceptCoparentFirestoreInvite(uid, resolved.ref);
+  } else {
+    ledgerInviteId = resolved.id;
+    result = await transactionAcceptLegacyCaseInviteToken(uid, resolved.ref);
+  }
+
+  inviteStructuredLog("accept_case_invite_applied", {
+    inviteKind: resolved.kind,
+    uid,
+    caseId: result.caseId,
+    alreadyMember: result.alreadyMember,
+    tokenPrefix: token.slice(0, 8),
+  });
+
+  if (resolved.kind === "coparentInvite" && !result.alreadyMember) {
+    await mergeChildrenIfNeeded(uid);
+    await copyInviterDisplayToInvitee(
+      uid,
+      String(resolved.data["senderUid"] ?? "")
+    );
+  }
 
   if (!result.alreadyMember) {
     await commitCaseLedgerEvent({
@@ -1055,7 +1496,7 @@ export const acceptCaseInvite = onCall(async (request) => {
       description: `Invite accepted as ${result.role}.`,
       data: {
         role: result.role,
-        inviteId,
+        inviteId: ledgerInviteId,
       },
     });
   }
@@ -1068,29 +1509,83 @@ export const acceptCaseInvite = onCall(async (request) => {
   };
 });
 
+/** Invitee declines a pending co-parent token invite (`coparentInvites/{token}`). */
+export const declineCoparentInvite = onCall(async (request) => {
+  const uid = requireAuthUid(request);
+  const token = asTrimmedString(request.data?.token, 200);
+  if (!token) {
+    throw new HttpsError("invalid-argument", "token is required.");
+  }
+  const ref = db.collection("coparentInvites").doc(token);
+  const snap = await ref.get();
+  if (!snap.exists) {
+    throw new HttpsError("not-found", "Invite not found.");
+  }
+  const d = snap.data() ?? {};
+  const status = String(d["status"] ?? "pending");
+  if (status !== "pending") {
+    throw new HttpsError("failed-precondition", "Invite is no longer pending.");
+  }
+  await ref.set(
+    {
+      recipientStatus: "declined",
+      status: "declined",
+      declinedAt: FieldValue.serverTimestamp(),
+      declinedByUid: uid,
+    },
+    { merge: true }
+  );
+  return { ok: true };
+});
+
 export const cleanupExpiredInvites = onSchedule("every 24 hours", async () => {
   const now = admin.firestore.Timestamp.now();
-  const stale = await db
+
+  const staleCase = await db
     .collection("caseInvites")
     .where("status", "==", "pending")
     .where("expiresAt", "<=", now)
     .limit(500)
     .get();
-  if (stale.empty) return;
-  const batch = db.batch();
-  for (const doc of stale.docs) {
-    batch.set(
+  if (!staleCase.empty) {
+    const batch = db.batch();
+    for (const doc of staleCase.docs) {
+      batch.set(
+        doc.ref,
+        { status: "expired", expiredAt: FieldValue.serverTimestamp() },
+        { merge: true }
+      );
+      batch.set(
+        db.collection("invites").doc(doc.id),
+        { status: "expired", expiredAt: FieldValue.serverTimestamp() },
+        { merge: true }
+      );
+    }
+    await batch.commit();
+  }
+
+  const staleCoparent = await db
+    .collection("coparentInvites")
+    .where("status", "==", "pending")
+    .where("expiresAt", "<=", now)
+    .limit(500)
+    .get();
+  if (staleCoparent.empty) {
+    return;
+  }
+  const batch2 = db.batch();
+  for (const doc of staleCoparent.docs) {
+    batch2.set(
       doc.ref,
-      { status: "expired", expiredAt: FieldValue.serverTimestamp() },
-      { merge: true }
-    );
-    batch.set(
-      db.collection("invites").doc(doc.id),
-      { status: "expired", expiredAt: FieldValue.serverTimestamp() },
+      {
+        status: "expired",
+        recipientStatus: "expired",
+        expiredAt: FieldValue.serverTimestamp(),
+      },
       { merge: true }
     );
   }
-  await batch.commit();
+  await batch2.commit();
 });
 
 export const pruneOldLogs = onSchedule("every 24 hours", async () => {
@@ -1313,3 +1808,530 @@ export const sendSupportEmail = onCall(
   }
   }
 );
+
+// -----------------------------------------------------------------------------
+// Co-parent invites: `coparentInvites/{uuid}` — Universal Links + app deep link (48h TTL)
+// Legacy alphanumeric codes remain in `coparentInviteCodes` for `acceptCoparentInviteCode`.
+// Shareable URLs: `https://parentledger.org/invite/{token}` (path-only, one-time use).
+// -----------------------------------------------------------------------------
+
+const COPARENT_INVITE_TTL_MS = 48 * 60 * 60 * 1000;
+
+/** Creates `coparentInvites/{token}` for native Universal Links (`/invite/{token}`). */
+export const createCoparentInviteCode = onCall(async (request) => {
+  const uid = requireAuthUid(request);
+  const ip = getRequestIp(request as unknown as Record<string, unknown>);
+  await enforceRateLimit(`createCoparentInviteCode_uid_${uid}`);
+  await enforceRateLimit(`createCoparentInviteCode_ip_${ip}`);
+
+  const userSnap = await db.collection("users").doc(uid).get();
+  const userData = userSnap.data() ?? {};
+  const caseId = userData["caseId"] as string | undefined;
+  if (!caseId) {
+    throw new HttpsError("failed-precondition", "You must belong to a case to invite someone.");
+  }
+  const userRole = String(userData["role"] ?? "parent");
+  if (userRole === "attorney") {
+    throw new HttpsError("permission-denied", "Attorney accounts cannot create co-parent invites.");
+  }
+
+  const token = randomUUID();
+  const ref = db.collection("coparentInvites").doc(token);
+  const collide = await ref.get();
+  if (collide.exists) {
+    throw new HttpsError("resource-exhausted", "Could not allocate invite. Try again.");
+  }
+
+  const expiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + COPARENT_INVITE_TTL_MS);
+  await ref.set({
+    caseId,
+    workspaceId: caseId,
+    senderUid: uid,
+    intendedRecipientEmail: null,
+    intendedRecipientPhone: null,
+    intendedRecipientUserId: null,
+    recipientStatus: "pending",
+    createdAt: FieldValue.serverTimestamp(),
+    acceptedAt: null,
+    expiresAt,
+    status: "pending",
+    used: false,
+    permissions: DEFAULT_COPARENT_INVITE_PERMISSIONS,
+  });
+
+  const universalLink = `https://parentledger.org/invite/${token}`;
+  const deepLink = `parentledger://invite/${token}`;
+  inviteStructuredLog("coparent_invite_created", {
+    caseId,
+    tokenPrefix: token.slice(0, 8),
+    senderUid: uid,
+  });
+  await db.collection("inviteLogs").add({
+    event: "coparent_firestore_invite_created",
+    token,
+    caseId,
+    uid,
+    ip,
+    timestamp: FieldValue.serverTimestamp(),
+  });
+
+  try {
+    await commitCaseLedgerEvent({
+      caseId,
+      type: "invite_sent",
+      actorId: uid,
+      title: "Co-parent invite sent",
+      description: "A secure co-parent invite link was generated.",
+      data: { token, kind: "coparent_firestore" },
+    });
+  } catch (e) {
+    console.error("case_events coparent_firestore_invite", e);
+  }
+
+  return {
+    token,
+    universalLink,
+    deepLink,
+    universalUrl: universalLink,
+    appDeepLink: deepLink,
+    expiresAt: expiresAt.toDate().toISOString(),
+  };
+});
+
+/** Accepts a co-parent invite code and links the signed-in user to the inviter's case. */
+export const acceptCoparentInviteCode = onCall(async (request) => {
+  const uid = requireAuthUid(request);
+  const ip = getRequestIp(request as unknown as Record<string, unknown>);
+  await enforceRateLimit(`acceptCoparentInviteCode_uid_${uid}`);
+  await enforceRateLimit(`acceptCoparentInviteCode_ip_${ip}`);
+
+  const raw = asTrimmedString(request.data?.code, 16);
+  const normalized = raw.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (normalized.length < 6 || normalized.length > 8) {
+    throw new HttpsError("invalid-argument", "Enter a valid invite code.");
+  }
+
+  const codeRef = db.collection("coparentInviteCodes").doc(normalized);
+  const userRef = db.collection("users").doc(uid);
+
+  const preUser = await userRef.get();
+  const preRole = String(preUser.data()?.["role"] ?? "parent");
+  if (preRole === "attorney") {
+    throw new HttpsError("permission-denied", "Attorney accounts cannot join via co-parent invite.");
+  }
+
+  const codeSnap = await codeRef.get();
+  if (!codeSnap.exists) {
+    throw new HttpsError("not-found", "Invalid or expired invite code.");
+  }
+  const preview = codeSnap.data() as Record<string, unknown>;
+  const targetCaseId = preview["caseId"] as string | undefined;
+  const inviterUid =
+    (preview["inviterId"] ?? preview["inviterUserId"]) as string | undefined;
+  if (!targetCaseId || !inviterUid) {
+    throw new HttpsError("failed-precondition", "Invalid invite.");
+  }
+
+  if (inviterUid === uid) {
+    throw new HttpsError("invalid-argument", "You cannot use your own invite code.");
+  }
+
+  const existingCaseEarly = preUser.data()?.["caseId"] as string | undefined;
+  if (existingCaseEarly === targetCaseId) {
+    return { ok: true, alreadyMember: true, caseId: targetCaseId };
+  }
+
+  let acceptedCaseIdForLedger = targetCaseId;
+
+  try {
+    await db.runTransaction(async (tx) => {
+      const cSnap = await tx.get(codeRef);
+      if (!cSnap.exists) {
+        throw new HttpsError("not-found", "Invalid or expired invite code.");
+      }
+      const inv = cSnap.data() as Record<string, unknown>;
+      if (inv["status"] !== "pending") {
+        throw new HttpsError("failed-precondition", "This invite has already been used.");
+      }
+      const exp = inv["expiresAt"] as admin.firestore.Timestamp | undefined;
+      if (exp && exp.toDate().getTime() <= Date.now()) {
+        tx.set(
+          codeRef,
+          { status: "expired", expiredAt: FieldValue.serverTimestamp() },
+          { merge: true }
+        );
+        throw new HttpsError("failed-precondition", "This invite code has expired.");
+      }
+      const caseId = inv["caseId"] as string;
+      const fromUid =
+        (inv["inviterId"] ?? inv["inviterUserId"]) as string | undefined;
+      if (!caseId || !fromUid || fromUid !== inviterUid || caseId !== targetCaseId) {
+        throw new HttpsError("failed-precondition", "Invalid invite.");
+      }
+
+      const userSnap = await tx.get(userRef);
+      const userData = userSnap.data();
+      const existingCaseId = userData?.["caseId"] as string | undefined;
+
+      if (existingCaseId === caseId) {
+        return;
+      }
+
+      if (existingCaseId != null && existingCaseId !== caseId) {
+        tx.update(userRef, {
+          mergeFromCaseId: existingCaseId,
+        });
+      }
+
+      tx.set(
+        userRef,
+        {
+          caseId,
+          onboardingStep: "invite_context",
+          role: "parent",
+          parentType: (userData?.["parentType"] as string | undefined) ?? "mom",
+          accessLevel: (userData?.["accessLevel"] as string | undefined) ?? "free",
+          subscriptionTier: (userData?.["subscriptionTier"] as string | undefined) ?? "free",
+        },
+        { merge: true }
+      );
+
+      const caseRef = db.collection("cases").doc(caseId);
+      const memberRef = caseRef.collection("members").doc(uid);
+      const caseMemberRef = db.collection("caseMembers").doc(`${caseId}_${uid}`);
+
+      tx.update(caseRef, {
+        [MEMBER_IDS]: FieldValue.arrayUnion(uid),
+      });
+
+      tx.set(memberRef, {
+        userId: uid,
+        joinedAt: FieldValue.serverTimestamp(),
+        role: "parent",
+      });
+
+      tx.set(
+        caseMemberRef,
+        {
+          caseId,
+          userId: uid,
+          role: "parent",
+          permissions: {
+            read: true,
+            comment: true,
+            export: true,
+            write: true,
+          },
+          linkedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+
+      tx.set(
+        codeRef,
+        {
+          status: "accepted",
+          acceptedByUserId: uid,
+          acceptedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    });
+  } catch (err) {
+    await db.collection("inviteLogs").add({
+      event: "coparent_code_failed",
+      code: normalized,
+      uid,
+      ip,
+      error: err instanceof Error ? err.message : String(err),
+      timestamp: FieldValue.serverTimestamp(),
+    });
+    throw err;
+  }
+
+  const afterSnap = await codeRef.get();
+  const finalStatus = String(afterSnap.data()?.["status"] ?? "");
+  if (finalStatus !== "accepted") {
+    return { ok: true, alreadyMember: true, caseId: targetCaseId };
+  }
+
+  await mergeChildrenIfNeeded(uid);
+
+  try {
+    await commitCaseLedgerEvent({
+      caseId: acceptedCaseIdForLedger,
+      type: "invite_accepted",
+      actorId: uid,
+      title: "Invite accepted",
+      description: "A co-parent joined using an invite code.",
+      data: { code: normalized, status: "accepted", kind: "coparent_code" },
+    });
+  } catch (e) {
+    console.error("case_events coparent_code_accept", e);
+  }
+
+  await db.collection("inviteLogs").add({
+    event: "coparent_code_accepted",
+    code: normalized,
+    uid,
+    ip,
+    timestamp: FieldValue.serverTimestamp(),
+  });
+
+  return { ok: true, caseId: acceptedCaseIdForLedger };
+});
+
+// -----------------------------------------------------------------------------
+// Case connections: remove co-parent or revoke attorney (admin writes only)
+// -----------------------------------------------------------------------------
+
+async function assertParentCanManageConnections(caseId: string, actorUid: string): Promise<void> {
+  await assertCaseMember(caseId, actorUid);
+  const userSnap = await db.collection("users").doc(actorUid).get();
+  const ud = userSnap.data() ?? {};
+  if (String(ud["role"] ?? "parent") === "attorney") {
+    throw new HttpsError(
+      "permission-denied",
+      "Attorney accounts cannot manage case connections."
+    );
+  }
+  const linkId = `${caseId}_${actorUid}`;
+  const linkSnap = await db.collection("caseMembers").doc(linkId).get();
+  if (linkSnap.exists) {
+    const perms = (linkSnap.data()?.["permissions"] ?? {}) as Record<string, unknown>;
+    if (perms["write"] === false) {
+      throw new HttpsError("permission-denied", "Your access to this case is read-only.");
+    }
+  }
+}
+
+function arrayRemoveUpdatesForUser(caseData: Record<string, unknown>, uid: string): Record<string, unknown> {
+  const updates: Record<string, unknown> = {
+    [MEMBER_IDS]: FieldValue.arrayRemove(uid),
+  };
+  const participants = caseData["participants"] as string[] | undefined;
+  if (participants?.includes(uid)) {
+    updates["participants"] = FieldValue.arrayRemove(uid);
+  }
+  const parents = caseData["parents"] as string[] | undefined;
+  if (parents?.includes(uid)) {
+    updates["parents"] = FieldValue.arrayRemove(uid);
+  }
+  return updates;
+}
+
+/** Parent removes the other parent from the shared case; target receives a new solo case. */
+export const removeCoParentFromCase = onCall(async (request) => {
+  const actorUid = requireAuthUid(request);
+  const ip = getRequestIp(request as unknown as Record<string, unknown>);
+  await enforceRateLimit(`removeCoParent_uid_${actorUid}`);
+  await enforceRateLimit(`removeCoParent_ip_${ip}`);
+
+  const targetUid = asTrimmedString(request.data?.targetUserId, 128);
+  if (!targetUid || targetUid === actorUid) {
+    throw new HttpsError("invalid-argument", "Invalid target user.");
+  }
+
+  const actorDoc = await db.collection("users").doc(actorUid).get();
+  const caseId = actorDoc.data()?.["caseId"] as string | undefined;
+  if (!caseId) {
+    throw new HttpsError("failed-precondition", "No case on account.");
+  }
+
+  await assertParentCanManageConnections(caseId, actorUid);
+
+  const targetLinkRef = db.collection("caseMembers").doc(`${caseId}_${targetUid}`);
+  const targetLinkSnap = await targetLinkRef.get();
+  const targetRole = String(targetLinkSnap.data()?.["role"] ?? "parent");
+  if (targetLinkSnap.exists && targetRole === "attorney") {
+    throw new HttpsError("invalid-argument", "Use revoke attorney for counsel.");
+  }
+
+  const targetUserSnap = await db.collection("users").doc(targetUid).get();
+  const targetCaseId = targetUserSnap.data()?.["caseId"] as string | undefined;
+  if (targetCaseId !== caseId) {
+    throw new HttpsError("failed-precondition", "That person is not linked to this case.");
+  }
+
+  const caseRef = db.collection("cases").doc(caseId);
+  const newCaseRef = db.collection("cases").doc();
+  const newCaseId = newCaseRef.id;
+
+  await db.runTransaction(async (tx) => {
+    const caseSnap = await tx.get(caseRef);
+    if (!caseSnap.exists) {
+      throw new HttpsError("not-found", "Case not found.");
+    }
+    const caseData = (caseSnap.data() ?? {}) as Record<string, unknown>;
+    const mids = (caseData[MEMBER_IDS] as string[] | undefined) ?? [];
+    const parents = (caseData["parents"] as string[] | undefined) ?? [];
+    const effective = mids.length > 0 ? mids : parents;
+    if (!effective.includes(targetUid)) {
+      throw new HttpsError("failed-precondition", "That user is not in this case.");
+    }
+
+    tx.update(caseRef, arrayRemoveUpdatesForUser(caseData, targetUid));
+
+    const linkSnapTxn = await tx.get(targetLinkRef);
+    if (linkSnapTxn.exists) {
+      tx.delete(targetLinkRef);
+    }
+
+    const memberSub = caseRef.collection("members").doc(targetUid);
+    const memberSnap = await tx.get(memberSub);
+    if (memberSnap.exists) {
+      tx.delete(memberSub);
+    }
+    const cmSub = caseRef.collection("caseMembers").doc(targetUid);
+    const cmSnap = await tx.get(cmSub);
+    if (cmSnap.exists) {
+      tx.delete(cmSub);
+    }
+
+    tx.set(newCaseRef, {
+      ownerId: targetUid,
+      [MEMBER_IDS]: [targetUid],
+      createdAt: FieldValue.serverTimestamp(),
+    });
+
+    tx.set(newCaseRef.collection("members").doc(targetUid), {
+      userId: targetUid,
+      role: "parent",
+      joinedAt: FieldValue.serverTimestamp(),
+    });
+
+    tx.set(
+      db.collection("caseMembers").doc(`${newCaseId}_${targetUid}`),
+      {
+        caseId: newCaseId,
+        userId: targetUid,
+        role: "parent",
+        permissions: {
+          read: true,
+          comment: true,
+          export: true,
+          write: true,
+        },
+        linkedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    tx.set(
+      db.collection("users").doc(targetUid),
+      {
+        caseId: newCaseId,
+        onboardingStep: "profile_complete",
+        role: "parent",
+      },
+      { merge: true }
+    );
+  });
+
+  try {
+    await commitCaseLedgerEvent({
+      caseId,
+      type: "member_removed",
+      actorId: actorUid,
+      title: "Co-parent removed",
+      description: "A parent removed the co-parent from this case.",
+      data: { removedUserId: targetUid, newCaseIdForRemovedUser: newCaseId },
+    });
+  } catch (e) {
+    console.error("case_events member_removed", e);
+  }
+
+  await db.collection("inviteLogs").add({
+    event: "coparent_removed",
+    caseId,
+    actorUid,
+    targetUid,
+    newCaseId,
+    ip,
+    timestamp: FieldValue.serverTimestamp(),
+  });
+
+  return { ok: true, newCaseIdForRemovedUser: newCaseId };
+});
+
+/** Parent revokes attorney read-only access to the case. */
+export const revokeAttorneyCaseAccess = onCall(async (request) => {
+  const actorUid = requireAuthUid(request);
+  const ip = getRequestIp(request as unknown as Record<string, unknown>);
+  await enforceRateLimit(`revokeAttorney_uid_${actorUid}`);
+  await enforceRateLimit(`revokeAttorney_ip_${ip}`);
+
+  const attorneyUid = asTrimmedString(request.data?.attorneyUserId, 128);
+  if (!attorneyUid || attorneyUid === actorUid) {
+    throw new HttpsError("invalid-argument", "Invalid attorney user.");
+  }
+
+  const actorDoc = await db.collection("users").doc(actorUid).get();
+  const caseId = actorDoc.data()?.["caseId"] as string | undefined;
+  if (!caseId) {
+    throw new HttpsError("failed-precondition", "No case on account.");
+  }
+
+  await assertParentCanManageConnections(caseId, actorUid);
+
+  const linkRef = db.collection("caseMembers").doc(`${caseId}_${attorneyUid}`);
+  const linkSnap = await linkRef.get();
+  if (!linkSnap.exists || String(linkSnap.data()?.["role"] ?? "") !== "attorney") {
+    throw new HttpsError("failed-precondition", "That attorney is not linked to this case.");
+  }
+
+  const caseRef = db.collection("cases").doc(caseId);
+
+  await db.runTransaction(async (tx) => {
+    const caseSnap = await tx.get(caseRef);
+    if (!caseSnap.exists) {
+      throw new HttpsError("not-found", "Case not found.");
+    }
+    const caseData = (caseSnap.data() ?? {}) as Record<string, unknown>;
+    tx.update(caseRef, arrayRemoveUpdatesForUser(caseData, attorneyUid));
+
+    tx.delete(linkRef);
+
+    const memberSub = caseRef.collection("members").doc(attorneyUid);
+    const memberSnap = await tx.get(memberSub);
+    if (memberSnap.exists) {
+      tx.delete(memberSub);
+    }
+    const cmSub = caseRef.collection("caseMembers").doc(attorneyUid);
+    const cmSnap = await tx.get(cmSub);
+    if (cmSnap.exists) {
+      tx.delete(cmSub);
+    }
+
+    const attorneyCaseLinkRef = db
+      .collection("users")
+      .doc(attorneyUid)
+      .collection("cases")
+      .doc(caseId);
+    tx.delete(attorneyCaseLinkRef);
+  });
+
+  try {
+    await commitCaseLedgerEvent({
+      caseId,
+      type: "attorney_access_revoked",
+      actorId: actorUid,
+      title: "Attorney access revoked",
+      description: "Counsel access to this case was revoked.",
+      data: { attorneyUserId: attorneyUid },
+    });
+  } catch (e) {
+    console.error("case_events attorney_revoked", e);
+  }
+
+  await db.collection("inviteLogs").add({
+    event: "attorney_revoked",
+    caseId,
+    actorUid,
+    attorneyUid,
+    ip,
+    timestamp: FieldValue.serverTimestamp(),
+  });
+
+  return { ok: true };
+});

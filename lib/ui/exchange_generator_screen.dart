@@ -20,8 +20,7 @@ bool generating = false;
 
 Future<void> generate() async {
 
-final caseId =
-Provider.of<CaseContext>(context, listen: false).caseId;
+final caseId = context.read<CaseContext>().caseId;
 
 if (caseId == null) return;
 

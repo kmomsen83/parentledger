@@ -8,6 +8,9 @@ import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 
+import '../models/user_role.dart';
+import 'user_role_service.dart';
+
 /// Secure AI access — all inference runs in Firebase HTTPS callables (no API keys in-app).
 class AiService {
   AiService._();
@@ -29,6 +32,7 @@ class AiService {
 
   static const int _maxAiMessageLines = 20;
   static const Duration _callableTimeout = Duration(seconds: 95);
+  static const Duration _assistantCallableTimeout = Duration(seconds: 95);
   static const int _maxRetries = 3;
   static const int _maxJoinedChars = 95000;
   static const Duration _cacheTtl = Duration(minutes: 20);
@@ -37,6 +41,8 @@ class AiService {
   static final Map<String, _CacheBucket<Object>> _cache = {};
   static final Map<String, Future<Object?>> _inFlight = {};
   static final Map<String, DateTime> _featureLastNetworkAt = {};
+  static final Map<String, DateTime> _counselCourtSummaryLastAt = {};
+  static const Duration _counselCourtSummaryMinGap = Duration(seconds: 45);
 
   static FirebaseFunctions _functions() =>
       FirebaseFunctions.instanceFor(app: Firebase.app(), region: 'us-central1');
@@ -111,6 +117,22 @@ class AiService {
       }
     }
     _featureLastNetworkAt[feature] = DateTime.now();
+  }
+
+  /// Extra spacing for counsel accounts (no subscription; discourages rapid callable churn).
+  static Future<void> _throttleCounselCourtSummaryNetwork() async {
+    if (await UserRoleService.currentRole() != UserRole.attorney) return;
+    final uid = _currentUid();
+    if (uid == null) return;
+    final last = _counselCourtSummaryLastAt[uid];
+    final now = DateTime.now();
+    if (last != null) {
+      final next = last.add(_counselCourtSummaryMinGap);
+      if (now.isBefore(next)) {
+        await Future<void>.delayed(next.difference(now));
+      }
+    }
+    _counselCourtSummaryLastAt[uid] = DateTime.now();
   }
 
   static Future<T> _dedupe<T>(String key, Future<T> Function() run) {
@@ -299,6 +321,7 @@ class AiService {
     }
 
     return _dedupe<String>('summary_$inputHash', () async {
+      await _throttleCounselCourtSummaryNetwork();
       await _throttleFeature('summary');
       try {
         final data = await _withRetry(() async {
@@ -386,6 +409,41 @@ class AiService {
   }
 
   /// Returns `{ riskLevel: low|medium|high, issues: List<String> }`.
+  /// Unified assistant: app help, case-grounded answers, neutral guidance — intent is inferred server-side.
+  static Future<String> askSmartAssistant(
+    String question, {
+    String? caseId,
+  }) async {
+    final trimmed = question.trim();
+    if (trimmed.isEmpty) {
+      throw ArgumentError('question is empty.');
+    }
+    final uid = _currentUid();
+    if (uid == null) throw StateError('Not signed in');
+    final caseKey = (caseId == null || caseId.trim().isEmpty) ? '_' : caseId.trim();
+    final dedupeHash = _sha256Hex('$uid::$caseKey::$trimmed');
+
+    return _dedupe<String>('assistant_$dedupeHash', () async {
+      await _throttleFeature('assistant');
+      final data = await _withRetry(() async {
+        final callable = _functions().httpsCallable(
+          'smartAssistant',
+          options: HttpsCallableOptions(timeout: _assistantCallableTimeout),
+        );
+        final res = await callable.call(<String, dynamic>{
+          'question': trimmed,
+          'caseId': caseId ?? '',
+        });
+        return _asStringKeyedMap(res.data);
+      });
+      final text = (data['text'] ?? '').toString().trim();
+      if (text.isEmpty) {
+        throw StateError('Assistant returned no text.');
+      }
+      return text;
+    });
+  }
+
   static Future<Map<String, dynamic>> detectComplianceIssues(
     List<String> messages, {
     bool forceRefresh = false,

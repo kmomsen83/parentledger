@@ -1,4 +1,7 @@
 /// Stored in `users/{uid}` as field `role` (default: parent).
+///
+/// Future multi-role: prefer additive fields (e.g. `roles[]`, `primaryRole`)
+/// rather than overloading this enum alone.
 enum UserRole {
   parent,
   attorney;

@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../design/design.dart';
 import '../../services/tamper_proof_service.dart';
 import '../../services/court_pdf_service.dart';
+import 'pdf_preview_screen.dart';
 
 class CourtSummaryScreen extends StatefulWidget {
 const CourtSummaryScreen({super.key});
@@ -138,7 +139,7 @@ return {
 };
 }).toList();
 
-await CourtPdfService.generate(
+final bytes = await CourtPdfService.buildCourtSummaryPdfBytes(
 complianceScore: complianceScore,
 exchanges: exchanges,
 violations: violations,
@@ -148,6 +149,20 @@ expenses: expenses,
 documents: documents,
 events: eventsData,
 narrative: buildNarrative(),
+);
+
+final file = await CourtPdfService.writePdfBytesToTempFile(bytes);
+await CourtPdfService.rememberLastGeneratedCourtSummaryPath(file.path);
+
+if (!mounted) return;
+
+await Navigator.of(context).push<void>(
+MaterialPageRoute<void>(
+builder: (_) => PDFPreviewScreen(
+filePath: file.path,
+title: 'Court Summary',
+),
+),
 );
 }
 

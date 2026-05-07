@@ -9,6 +9,21 @@ class CaseTimelineService {
   static CollectionReference<Map<String, dynamic>> timelineCol(String caseId) =>
       _db.collection('cases').doc(caseId).collection('timeline');
 
+  /// Evidence overlay for a ledger row (`case_events` doc id). Stored at
+  /// `cases/{caseId}/timeline/{eventId}` alongside optional activity-log docs.
+  static Future<void> setEvidenceFlag({
+    required String caseId,
+    required String eventId,
+    required bool isEvidence,
+  }) async {
+    await timelineCol(caseId).doc(eventId).set(<String, dynamic>{
+      'caseId': caseId,
+      'eventId': eventId,
+      'isEvidence': isEvidence,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+
   /// Types: message_sent, exchange_completed, exchange_checkin_completed,
   /// exchange_scheduled, expense_added, violation_flagged, risk_updated, summary_generated
   static Future<void> logEvent({

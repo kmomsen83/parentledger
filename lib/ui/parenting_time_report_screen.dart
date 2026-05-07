@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import 'package:parentledger/design/design.dart';
 import '../services/court_pdf_service.dart';
+import 'pdf_preview_screen.dart';
 import 'recent_activity_timeline_screen.dart';
 
 class ParentingTimeReportScreen extends StatefulWidget {
@@ -203,7 +204,7 @@ return {
 };
 }).toList();
 
-await CourtPdfService.generate(
+final bytes = await CourtPdfService.buildCourtSummaryPdfBytes(
 complianceScore: compliance,
 exchanges: exchanges,
 violations: missed,
@@ -215,13 +216,28 @@ events: eventsData,
 narrative: buildNarrative(),
 );
 
+final file = await CourtPdfService.writePdfBytesToTempFile(bytes);
+await CourtPdfService.rememberLastGeneratedCourtSummaryPath(file.path);
+
+if (!mounted) return;
+
+await Navigator.of(context).push<void>(
+MaterialPageRoute<void>(
+builder: (_) => PDFPreviewScreen(
+filePath: file.path,
+title: 'Court Summary',
+),
+),
+);
+
 if (mounted) {
 ScaffoldMessenger.of(context).showSnackBar(
-const SnackBar(content: Text("Court report generated")),
+const SnackBar(content: Text("Court report ready")),
 );
 }
 
 } catch (e) {
+if (!mounted) return;
 ScaffoldMessenger.of(context).showSnackBar(
 const SnackBar(content: Text("Export failed")),
 );

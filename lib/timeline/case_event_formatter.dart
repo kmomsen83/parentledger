@@ -48,6 +48,16 @@ class CaseEventFormatter {
       );
     }
 
+    if (t == CaseEventTypes.checkIn || rawType == 'check_in') {
+      final linked = (m['linkedExchangeId'] ?? '').toString().trim();
+      return CaseEventFormal(
+        title: 'Location check-in',
+        subtitle: linked.isNotEmpty
+            ? 'Verified GPS presence; linked to a scheduled exchange.'
+            : 'Verified GPS presence recorded.',
+      );
+    }
+
     if (rawType == 'exchange_checkin_completed' ||
         m['eventSubtype']?.toString() == 'exchange_checkin_completed') {
       return const CaseEventFormal(
@@ -120,6 +130,17 @@ class CaseEventFormatter {
 
     if (_isDocumentUpload(e, t)) {
       return (m['fileName'] ?? e.description).toString().trim();
+    }
+
+    if (t == CaseEventTypes.checkIn || rawType == 'check_in') {
+      final addr = (m['address'] ?? '').toString().trim();
+      if (addr.isNotEmpty) return addr;
+      final lat = m['lat'];
+      final lng = m['lng'];
+      if (lat != null && lng != null) {
+        return '${lat.toString()}, ${lng.toString()}';
+      }
+      return '';
     }
 
     if (rawType == 'exchange_checkin_completed' ||

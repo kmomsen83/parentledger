@@ -5,9 +5,10 @@ import 'package:provider/provider.dart';
 import 'package:parentledger/design/design.dart';
 import 'package:parentledger/providers/case_context.dart';
 import 'package:parentledger/services/case_switcher_service.dart';
+import 'package:parentledger/services/counsel_access_policy.dart';
 import 'package:parentledger/services/legal_export_service.dart';
 import 'package:parentledger/ui/legal_export_preview_screen.dart';
-import 'package:parentledger/ui/widgets/parent_upgrade_prompt.dart';
+import 'package:parentledger/ui/widgets/premium_upgrade_sheet.dart';
 import 'package:parentledger/ui/widgets/trust_elements.dart';
 
 class LegalExportCenterScreen extends StatefulWidget {
@@ -27,12 +28,9 @@ class _LegalExportCenterScreenState extends State<LegalExportCenterScreen> {
   Future<void> generate(String type, CaseContext session) async {
     if (loadingType != null) return;
     if (!session.isAttorney && !session.unlockedParentPremiumFeatures) {
-      await showParentUpgradePrompt(
+      await showPremiumUpgradeSheet(
         context,
-        title: 'Upgrade for full exports',
-        message:
-            'Court-ready exports without counsel watermarks are included with ParentLedger Pro. '
-            'Subscribe to generate full case, timeline, and expense reports.',
+        feature: DashboardPremiumFeature.complianceReports,
       );
       return;
     }
@@ -53,10 +51,32 @@ class _LegalExportCenterScreenState extends State<LegalExportCenterScreen> {
       return;
     }
 
+    if (session.isAttorney) {
+      final wait = await CounselAccessPolicy.exportCooldownRemaining();
+      if (wait != null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Please wait a moment before exporting again.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+    }
+
+    if (!mounted) return;
     setState(() => loadingType = type);
 
     try {
       final doc = await LegalExportService().generate(type, caseId: caseId);
+
+      if (!mounted) return;
+
+      if (session.isAttorney) {
+        await CounselAccessPolicy.recordExportCompleted();
+      }
 
       if (!mounted) return;
 

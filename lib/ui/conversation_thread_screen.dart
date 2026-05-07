@@ -11,6 +11,7 @@ import '../design/design.dart';
 import '../providers/case_context.dart';
 import '../util/subscription_gate.dart';
 import '../services/case_messaging_service.dart';
+import '../services/counsel_access_policy.dart';
 import '../services/message_service.dart';
 import '../services/ai_service.dart';
 import 'widgets/ai_loading_skeleton.dart';
@@ -34,6 +35,8 @@ class ConversationThreadScreen extends StatefulWidget {
     required this.caseId,
     String? conversationId,
     this.flaggedOnly = false,
+    this.initialComposerText,
+    this.embedInParent = false,
   }) : conversationId =
             conversationId ?? CaseMessagingService.defaultConversationId;
 
@@ -41,8 +44,14 @@ class ConversationThreadScreen extends StatefulWidget {
   final String caseId;
   final String conversationId;
 
+  /// Nested under counsel [ClientCaseScreen] tabs (no app bar).
+  final bool embedInParent;
+
   /// When true, only messages with a [legalFlag] are listed (attorney filter).
   final bool flaggedOnly;
+
+  /// Optional draft placed in the composer (e.g. day context from calendar).
+  final String? initialComposerText;
 
   @override
   State<ConversationThreadScreen> createState() =>
@@ -88,6 +97,10 @@ class _ConversationThreadScreenState extends State<ConversationThreadScreen> {
       widget.caseId,
       widget.conversationId,
     );
+    final draft = widget.initialComposerText;
+    if (draft != null && draft.isNotEmpty) {
+      controller.text = draft;
+    }
   }
 
   @override
@@ -223,6 +236,21 @@ class _ConversationThreadScreenState extends State<ConversationThreadScreen> {
     if (!await requirePremiumOrPrompt(context, guard: allowExport)) return;
     if (!mounted) return;
 
+    if (session.isAttorney) {
+      final wait = await CounselAccessPolicy.exportCooldownRemaining();
+      if (wait != null) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Please wait a moment before exporting again.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+    }
+
     try {
       final docs = await MessageService.getMessagesForExport(
         widget.caseId,
@@ -237,6 +265,9 @@ class _ConversationThreadScreenState extends State<ConversationThreadScreen> {
         entries: entries,
         caseId: widget.caseId,
       );
+      if (session.isAttorney) {
+        await CounselAccessPolicy.recordExportCompleted();
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -998,12 +1029,15 @@ class _ConversationThreadScreenState extends State<ConversationThreadScreen> {
 
     if (widget.caseId.isEmpty) {
       return Scaffold(
+        primary: !widget.embedInParent,
         backgroundColor: PLDesign.background,
-        appBar: AppBar(
-          backgroundColor: PLDesign.surface,
-          foregroundColor: PLDesign.textPrimary,
-          title: Text(context.tTone('messages')),
-        ),
+        appBar: widget.embedInParent
+            ? null
+            : AppBar(
+                backgroundColor: PLDesign.surface,
+                foregroundColor: PLDesign.textPrimary,
+                title: Text(context.tTone('messages')),
+              ),
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(28),
@@ -1034,62 +1068,68 @@ class _ConversationThreadScreenState extends State<ConversationThreadScreen> {
     final export30Label = context.tTone('exportPdfLast30Days');
     final exportFlaggedLabel = context.tTone('exportPdfFlaggedRiskOnly');
 
-    return Scaffold(
-      backgroundColor: PLDesign.background,
-      appBar: AppBar(
-        elevation: 0,
-        backgroundColor: PLDesign.surface,
-        foregroundColor: PLDesign.textPrimary,
-        title: Text(widget.title),
-        actions: [
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.share_outlined),
-            onSelected: (v) async {
-              switch (v) {
-                case 'pdf_all':
-                  await _exportPdf();
-                  break;
-                case 'pdf_30':
-                  await _exportPdf(
-                    since: DateTime.now().subtract(const Duration(days: 30)),
-                  );
-                  break;
-                case 'pdf_flagged':
-                  await _exportPdf(flaggedOnly: true);
-                  break;
-              }
-            },
-            itemBuilder: (_) => [
-              PopupMenuItem(
-                value: 'pdf_all',
-                child: Text(exportFullLabel),
-              ),
-              PopupMenuItem(
-                value: 'pdf_30',
-                child: Text(export30Label),
-              ),
-              PopupMenuItem(
-                value: 'pdf_flagged',
-                child: Text(exportFlaggedLabel),
-              ),
-            ],
-          ),
-          if (!isAttorney)
-            IconButton(
-              icon: const Icon(Icons.mic_outlined),
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => LegalTranscriptionScreen(
-                      caseId: widget.caseId,
-                    ),
+    final appBar = widget.embedInParent
+        ? null
+        : AppBar(
+            elevation: 0,
+            backgroundColor: PLDesign.surface,
+            foregroundColor: PLDesign.textPrimary,
+            title: Text(widget.title),
+            actions: [
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.share_outlined),
+                onSelected: (v) async {
+                  switch (v) {
+                    case 'pdf_all':
+                      await _exportPdf();
+                      break;
+                    case 'pdf_30':
+                      await _exportPdf(
+                        since:
+                            DateTime.now().subtract(const Duration(days: 30)),
+                      );
+                      break;
+                    case 'pdf_flagged':
+                      await _exportPdf(flaggedOnly: true);
+                      break;
+                  }
+                },
+                itemBuilder: (_) => [
+                  PopupMenuItem(
+                    value: 'pdf_all',
+                    child: Text(exportFullLabel),
                   ),
-                );
-              },
-            ),
-        ],
-      ),
+                  PopupMenuItem(
+                    value: 'pdf_30',
+                    child: Text(export30Label),
+                  ),
+                  PopupMenuItem(
+                    value: 'pdf_flagged',
+                    child: Text(exportFlaggedLabel),
+                  ),
+                ],
+              ),
+              if (!isAttorney)
+                IconButton(
+                  icon: const Icon(Icons.mic_outlined),
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => LegalTranscriptionScreen(
+                          caseId: widget.caseId,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+            ],
+          );
+
+    return Scaffold(
+      primary: !widget.embedInParent,
+      backgroundColor: PLDesign.background,
+      appBar: appBar,
       body: Column(
         children: [
           MessageTrustBanner(

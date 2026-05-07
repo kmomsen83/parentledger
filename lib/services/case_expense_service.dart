@@ -33,7 +33,8 @@ class CaseExpenseService {
     return n < SubscriptionLimits.freeMaxExpenses;
   }
 
-  static Future<void> addExpense({
+  /// Returns the new Firestore expense document id from [createCaseExpense].
+  static Future<String> addExpense({
     required String caseId,
     required double amount,
     required String description,
@@ -67,6 +68,19 @@ class CaseExpenseService {
     );
 
     await CustodyRiskInsightsService.refresh(caseId);
+    return expenseId;
+  }
+
+  /// Attaches a receipt image URL to an existing expense (creator or co-parent with access).
+  static Future<void> setReceiptUrl({
+    required String caseId,
+    required String expenseId,
+    required String receiptUrl,
+  }) async {
+    await expensesCol(caseId).doc(expenseId).update(<String, dynamic>{
+      'receiptUrl': receiptUrl,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
   }
 
   // IMPORTANT: Each call returns a new [Stream] (new Firestore listen). The dashboard uses

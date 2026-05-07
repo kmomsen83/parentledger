@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../models/child_model.dart';
+import 'add_edit_child_screen.dart';
 import 'case_insights_screen.dart';
 import 'timeline_violations_screen.dart';
 
@@ -10,8 +12,27 @@ class CaseRoutes {
   static const String insights = '/insights';
   static const String violations = '/violations';
 
+  /// [arguments] must be a [ChildModel] (edit existing child).
+  static const String editChild = '/editChild';
+
   static Route<dynamic>? onGenerateRoute(RouteSettings settings) {
     switch (settings.name) {
+      case editChild:
+        final child = settings.arguments;
+        if (child is! ChildModel) {
+          return MaterialPageRoute<void>(
+            builder: (_) => const Scaffold(
+              body: Center(
+                child: Text('No child to edit.'),
+              ),
+            ),
+            settings: settings,
+          );
+        }
+        return MaterialPageRoute<void>(
+          builder: (_) => AddEditChildScreen(initialChild: child),
+          settings: settings,
+        );
       case insights:
         final caseId = settings.arguments as String?;
         if (caseId == null || caseId.isEmpty) {

@@ -717,6 +717,60 @@
   "dashboardCaseSubtitle_neutral": "Así va tu caso de un vistazo",
   "dashboardCaseSubtitle_professional": "Así va tu caso de un vistazo",
   "dashboardCaseSubtitle_legal": "Así va tu caso de un vistazo",
+  "dashboardPremiumHeadline_neutral": "Todo documentado. Basta de discusiones.",
+  "dashboardPremiumHeadline_professional": "Todo documentado. Basta de discusiones.",
+  "dashboardPremiumHeadline_legal": "Todo documentado. Basta de discusiones.",
+  "dashboardPremiumTagline_neutral": "Gastos, mensajes y calendario de custodia en un solo lugar.",
+  "dashboardPremiumTagline_professional": "Gastos, mensajes y calendario de custodia en un solo lugar.",
+  "dashboardPremiumTagline_legal": "Gastos, mensajes y calendario de custodia en un solo lugar.",
+  "messagesCardTitle_neutral": "Mensajes",
+  "messagesCardTitle_professional": "Mensajes",
+  "messagesCardTitle_legal": "Mensajes",
+  "messagesPreviewLoading_neutral": "Cargando mensajes recientes…",
+  "messagesPreviewLoading_professional": "Cargando mensajes recientes…",
+  "messagesPreviewLoading_legal": "Cargando mensajes recientes…",
+  "messagesPreviewEmpty_neutral": "No hay mensajes recientes",
+  "messagesPreviewEmpty_professional": "No hay mensajes recientes",
+  "messagesPreviewEmpty_legal": "No hay mensajes recientes",
+  "messagesUnreadNone_neutral": "No hay mensajes sin leer",
+  "messagesUnreadNone_professional": "No hay mensajes sin leer",
+  "messagesUnreadNone_legal": "No hay mensajes sin leer",
+  "messagesUnreadOne_neutral": "1 mensaje sin leer",
+  "messagesUnreadOne_professional": "1 mensaje sin leer",
+  "messagesUnreadOne_legal": "1 mensaje sin leer",
+  "messagesUnreadMany_neutral": "{count} mensajes sin leer",
+  "@messagesUnreadMany_neutral": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messagesUnreadMany_professional": "{count} mensajes sin leer",
+  "@messagesUnreadMany_professional": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "messagesUnreadMany_legal": "{count} mensajes sin leer",
+  "@messagesUnreadMany_legal": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "balanceCardSecurePill_neutral": "Toda la actividad queda documentada de forma segura",
+  "balanceCardSecurePill_professional": "Toda la actividad queda documentada de forma segura",
+  "balanceCardSecurePill_legal": "Toda la actividad queda documentada de forma segura",
+  "dashboardTrustBannerPrimary_neutral": "Cada gasto y mensaje queda registrado.",
+  "dashboardTrustBannerPrimary_professional": "Cada gasto y mensaje queda registrado.",
+  "dashboardTrustBannerPrimary_legal": "Cada gasto y mensaje queda registrado.",
+  "dashboardTrustBannerSecondary_neutral": "Exporta el historial en cualquier momento para mediación o tribunales.",
+  "dashboardTrustBannerSecondary_professional": "Exporta el historial en cualquier momento para mediación o tribunales.",
+  "dashboardTrustBannerSecondary_legal": "Exporta el historial en cualquier momento para mediación o tribunales.",
   "addExpense_neutral": "+ Añadir gasto",
   "addExpense_professional": "+ Añadir gasto",
   "addExpense_legal": "+ Añadir gasto",
@@ -726,6 +780,9 @@
   "requestReimbursement_neutral": "Solicitar reembolso",
   "requestReimbursement_professional": "Solicitar reembolso",
   "requestReimbursement_legal": "Solicitar reembolso",
+  "requestPayment_neutral": "Solicitar pago",
+  "requestPayment_professional": "Solicitar pago",
+  "requestPayment_legal": "Solicitar pago",
   "noMessages_neutral": "Aún no hay mensajes",
   "noMessages_professional": "Aún no hay mensajes",
   "noMessages_legal": "Aún no hay mensajes",
@@ -1122,12 +1179,12 @@
   "caseTimeline2_neutral": "Case Timeline2",
   "caseTimeline2_professional": "Case Timeline2",
   "caseTimeline2_legal": "Case Timeline2",
-  "mom_neutral": "Mamá",
-  "mom_professional": "Mamá",
-  "mom_legal": "Mamá",
-  "dad_neutral": "Papá",
-  "dad_professional": "Papá",
-  "dad_legal": "Papá",
+  "mom_neutral": "Madre",
+  "mom_professional": "Madre",
+  "mom_legal": "Madre",
+  "dad_neutral": "Padre",
+  "dad_professional": "Padre",
+  "dad_legal": "Padre",
   "guardian_neutral": "Tutor",
   "guardian_professional": "Tutor",
   "guardian_legal": "Tutor",
@@ -1185,9 +1242,9 @@
   "balanceUpdatedJustNow_neutral": "Actualizado ahora",
   "balanceUpdatedJustNow_professional": "Actualizado ahora",
   "balanceUpdatedJustNow_legal": "Actualizado ahora",
-  "balanceUpdatedTodayIntro_neutral": "Actualizado hoy ·",
-  "balanceUpdatedTodayIntro_professional": "Actualizado hoy ·",
-  "balanceUpdatedTodayIntro_legal": "Actualizado hoy ·",
+  "balanceUpdatedTodayIntro_neutral": "Actualizado hoy •",
+  "balanceUpdatedTodayIntro_professional": "Actualizado hoy •",
+  "balanceUpdatedTodayIntro_legal": "Actualizado hoy •",
   "completeWorkspaceSetupToTrackBalances_neutral": "Completa la configuración del espacio de trabajo para ver saldos.",
   "completeWorkspaceSetupToTrackBalances_professional": "Completa la configuración del espacio de trabajo para ver saldos.",
   "completeWorkspaceSetupToTrackBalances_legal": "Completa la configuración del espacio de trabajo para ver saldos.",

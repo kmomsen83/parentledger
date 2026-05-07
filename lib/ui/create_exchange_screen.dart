@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import '../design/design.dart';
 import '../providers/case_context.dart';
 import '../services/exchange_service.dart';
+import 'widgets/premium_upgrade_sheet.dart';
 import 'widgets/trust_elements.dart';
 import '../services/location_service.dart';
 import 'exchange_scheduled_confirmation_screen.dart';
@@ -301,6 +302,15 @@ class _CreateExchangeScreenState extends State<CreateExchangeScreen> {
         SnackBar(
           content: Text(context.tTone('completeAllSectionsIncludingA')),
         ),
+      );
+      return;
+    }
+
+    final session = context.read<CaseContext>();
+    if (!session.isAttorney && !session.unlockedParentPremiumFeatures) {
+      await showPremiumUpgradeSheet(
+        context,
+        feature: DashboardPremiumFeature.calendarScheduling,
       );
       return;
     }

@@ -5,10 +5,21 @@ import 'package:table_calendar/table_calendar.dart';
 
 import '../../design/design.dart';
 import '../../models/case_event.dart';
+import '../../models/custody_schedule_rule.dart';
+import '../../models/holiday.dart';
 import '../../providers/case_context.dart';
+import '../../services/case_switcher_service.dart';
+import '../../providers/holiday_provider.dart'
+    show HolidayCalendarIndex, holidayEmojiForName;
 import '../../services/case_event_service.dart';
+import '../../services/custody_schedule_generator.dart';
+import '../../services/custody_schedule_service.dart';
+import '../../services/holiday_service.dart';
 import '../../services/timeline_violation_filter.dart';
+import '../../widgets/holiday_modal.dart';
+import '../widgets/premium_upgrade_sheet.dart';
 import 'day_detail_screen.dart';
+import 'set_custody_schedule_sheet.dart';
 
 /// Data-driven month grid backed by [caseEvents]. Swipe or header buttons change month.
 ///
@@ -166,9 +177,23 @@ class _CalendarMonthViewScreenState extends State<CalendarMonthViewScreen> {
     });
   }
 
+  static Color? _custodyBarColor(String? uid, CustodyScheduleRule rule) {
+    if (uid == null || !rule.isConfigured) return null;
+    if (uid == rule.parentAUserId) return PLDesign.primary;
+    if (uid == rule.parentBUserId) return PLDesign.ai;
+    return PLDesign.textMuted;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final caseId = context.watch<CaseContext>().caseId;
+    final session = context.watch<CaseContext>();
+    final switcher = context.watch<CaseSwitcherService>();
+    final caseId = session.isAttorney
+        ? (switcher.selectedCaseId ?? session.caseId)
+        : session.caseId;
+
+    final scheduleParentLocked =
+        !session.isAttorney && !session.unlockedParentPremiumFeatures;
 
     return Scaffold(
       backgroundColor: PLDesign.background,
@@ -176,6 +201,40 @@ class _CalendarMonthViewScreenState extends State<CalendarMonthViewScreen> {
         title: const Text('Monthly Calendar'),
         backgroundColor: PLDesign.surface,
         foregroundColor: PLDesign.textPrimary,
+        actions: [
+          IconButton(
+            tooltip: 'Add holiday',
+            icon: const Icon(Icons.celebration_outlined),
+            onPressed: caseId == null || caseId.isEmpty
+                ? null
+                : scheduleParentLocked
+                    ? () {
+                        showPremiumUpgradeSheet(
+                          context,
+                          feature: DashboardPremiumFeature.calendarScheduling,
+                        );
+                      }
+                    : () async {
+                        try {
+                          final r = await CustodyScheduleService.fetchActiveRule(
+                            caseId,
+                          );
+                          if (!context.mounted) return;
+                          await showCreateHolidayDialog(
+                            context: context,
+                            caseId: caseId,
+                            rule: r,
+                            initialDate: _focusedDay,
+                          );
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('Could not load schedule: $e')),
+                          );
+                        }
+                      },
+          ),
+        ],
       ),
       body: caseId == null || caseId.isEmpty
           ? Center(
@@ -211,9 +270,140 @@ class _CalendarMonthViewScreenState extends State<CalendarMonthViewScreen> {
                 final violations = _violationCount(events);
                 final exchangeTotal = _exchangeActivityCount(events);
 
-                return Column(
+                return StreamBuilder<CustodyScheduleRule>(
+                  stream: CustodyScheduleService.watchRule(caseId),
+                  builder: (context, ruleSnap) {
+                    final rule =
+                        ruleSnap.data ?? CustodyScheduleRule.empty;
+                    return StreamBuilder<Map<DateTime, String>>(
+                      stream: CustodyScheduleService.watchOverrides(caseId),
+                      builder: (context, ovSnap) {
+                        final overrides =
+                            ovSnap.data ?? <DateTime, String>{};
+                        final rangeStart = DateTime(
+                          _focusedDay.year,
+                          _focusedDay.month,
+                          1,
+                        );
+                        final rangeEnd = DateTime(
+                          _focusedDay.year,
+                          _focusedDay.month + 1,
+                          0,
+                        );
+                        final custodyByDay = rule.isConfigured
+                            ? CustodyScheduleGenerator.expand(
+                                rule: rule,
+                                rangeStart: rangeStart,
+                                rangeEnd: rangeEnd,
+                                overrides: overrides,
+                              )
+                            : <DateTime, String>{};
+
+                        return StreamBuilder<List<Holiday>>(
+                          stream: HolidayService.watchHolidaysForMonth(
+                            caseId,
+                            _focusedDay,
+                          ),
+                          builder: (context, holSnap) {
+                            final holidays = holSnap.data ?? [];
+                            final holidayByDay =
+                                HolidayCalendarIndex.holidaysByLocalDay(
+                              holidays,
+                            );
+
+                            return Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    StreamBuilder<List<Holiday>>(
+                      stream: HolidayService.watchUpcomingHolidays(caseId),
+                      builder: (context, upSnap) {
+                        final upcoming = upSnap.data ?? [];
+                        if (upcoming.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+                        final next = upcoming.first;
+                        final who = next.assignedParentId == rule.parentAUserId
+                            ? 'Parent A'
+                            : (next.assignedParentId == rule.parentBUserId
+                                ? 'Parent B'
+                                : 'Assigned parent');
+                        return Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+                          child: Material(
+                            color: PLDesign.card,
+                            borderRadius: BorderRadius.circular(14),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(14),
+                              onTap: rule.isConfigured
+                                  ? () => showHolidayDetailSheet(
+                                        context: context,
+                                        caseId: caseId,
+                                        holiday: next,
+                                        rule: rule,
+                                      )
+                                  : null,
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Text(
+                                      holidayEmojiForName(next.name),
+                                      style: const TextStyle(fontSize: 22),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            'Next: ${next.name}',
+                                            style: PLDesign.body.copyWith(
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                          Text(
+                                            '${Holiday.dateKeyFor(next.dateLocal)} · $who',
+                                            style: PLDesign.caption.copyWith(
+                                              color: PLDesign.textMuted,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    TextButton(
+                                      onPressed: rule.isConfigured
+                                          ? () {
+                                              if (scheduleParentLocked) {
+                                                showPremiumUpgradeSheet(
+                                                  context,
+                                                  feature:
+                                                      DashboardPremiumFeature
+                                                          .calendarScheduling,
+                                                );
+                                                return;
+                                              }
+                                              showHolidayDetailSheet(
+                                                context: context,
+                                                caseId: caseId,
+                                                holiday: next,
+                                                rule: rule,
+                                              );
+                                            }
+                                          : null,
+                                      child: const Text('Propose change'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
                       child: Container(
@@ -269,6 +459,31 @@ class _CalendarMonthViewScreenState extends State<CalendarMonthViewScreen> {
                       ),
                     ),
                     Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                      child: OutlinedButton.icon(
+                        onPressed: scheduleParentLocked
+                            ? () => showPremiumUpgradeSheet(
+                                  context,
+                                  feature: DashboardPremiumFeature
+                                      .calendarScheduling,
+                                )
+                            : () => showSetCustodyScheduleSheet(
+                                  context,
+                                  caseId: caseId,
+                                ),
+                        icon: const Icon(Icons.edit_calendar_outlined),
+                        label: const Text('Set custody schedule'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: PLDesign.textPrimary,
+                          side: const BorderSide(color: PLDesign.border),
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 14,
+                            horizontal: 16,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 12),
                       child: Row(
                         children: [
@@ -303,7 +518,7 @@ class _CalendarMonthViewScreenState extends State<CalendarMonthViewScreen> {
                         daysOfWeekVisible: true,
                         startingDayOfWeek: StartingDayOfWeek.sunday,
                         availableGestures: AvailableGestures.horizontalSwipe,
-                        rowHeight: 52,
+                        rowHeight: 56,
                         sixWeekMonthsEnforced: false,
                         eventLoader: (day) {
                           final key = _dayOnly(day);
@@ -314,15 +529,26 @@ class _CalendarMonthViewScreenState extends State<CalendarMonthViewScreen> {
                         },
                         onDaySelected: (selected, focused) {
                           setState(() => _focusedDay = focused);
-                          Navigator.push<void>(
-                            context,
-                            MaterialPageRoute<void>(
-                              builder: (_) => DayDetailScreen(
-                                caseId: caseId,
-                                selectedDate: _dayOnly(selected),
+                          final key = _dayOnly(selected);
+                          final hol = holidayByDay[key];
+                          if (hol != null) {
+                            showHolidayDetailSheet(
+                              context: context,
+                              caseId: caseId,
+                              holiday: hol,
+                              rule: rule,
+                            );
+                          } else {
+                            Navigator.push<void>(
+                              context,
+                              MaterialPageRoute<void>(
+                                builder: (_) => DayDetailScreen(
+                                  caseId: caseId,
+                                  selectedDate: key,
+                                ),
                               ),
-                            ),
-                          );
+                            );
+                          }
                         },
                         calendarStyle: CalendarStyle(
                           outsideDaysVisible: true,
@@ -377,28 +603,82 @@ class _CalendarMonthViewScreenState extends State<CalendarMonthViewScreen> {
                         ),
                         calendarBuilders: CalendarBuilders<CaseEvent>(
                           markerBuilder: (context, day, dayEvents) {
+                            final key = _dayOnly(day);
+                            final hol = holidayByDay[key];
+                            final custodyUid = hol?.assignedParentId ??
+                                custodyByDay[key];
+                            final barColor =
+                                _custodyBarColor(custodyUid, rule);
                             final dots = _dotsForDay(dayEvents);
-                            if (dots.isEmpty) return null;
+                            final emoji = hol != null
+                                ? holidayEmojiForName(hol.name)
+                                : null;
+                            if (barColor == null &&
+                                dots.isEmpty &&
+                                emoji == null) {
+                              return null;
+                            }
                             return Padding(
-                              padding: const EdgeInsets.only(bottom: 4),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
+                              padding: const EdgeInsets.only(bottom: 2),
+                              child: Column(
                                 mainAxisSize: MainAxisSize.min,
-                                children: dots
-                                    .map(
-                                      (k) => Container(
-                                        width: 6,
-                                        height: 6,
-                                        margin: const EdgeInsets.symmetric(
-                                          horizontal: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: _dotColor(k),
-                                          shape: BoxShape.circle,
-                                        ),
+                                children: [
+                                  if (dots.isNotEmpty)
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: dots
+                                          .map(
+                                            (k) => Container(
+                                              width: 6,
+                                              height: 6,
+                                              margin:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 2,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: _dotColor(k),
+                                                shape: BoxShape.circle,
+                                              ),
+                                            ),
+                                          )
+                                          .toList(),
+                                    ),
+                                  if (barColor != null || emoji != null)
+                                    Padding(
+                                      padding: EdgeInsets.only(
+                                        top: dots.isNotEmpty ? 3 : 0,
                                       ),
-                                    )
-                                    .toList(),
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          if (barColor != null)
+                                            Container(
+                                              height: 4,
+                                              width: 26,
+                                              decoration: BoxDecoration(
+                                                color: barColor,
+                                                borderRadius:
+                                                    BorderRadius.circular(2),
+                                              ),
+                                            ),
+                                          if (emoji != null) ...[
+                                            if (barColor != null)
+                                              const SizedBox(width: 4),
+                                            Text(
+                                              emoji,
+                                              style: const TextStyle(
+                                                fontSize: 11,
+                                              ),
+                                            ),
+                                          ],
+                                        ],
+                                      ),
+                                    ),
+                                ],
                               ),
                             );
                           },
@@ -408,13 +688,20 @@ class _CalendarMonthViewScreenState extends State<CalendarMonthViewScreen> {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
                       child: Text(
-                        'Dots: custody / exchange (yellow), check-in (green), '
-                        'issues (red), messaging (blue). Tap a day for the timeline.',
+                        'Bottom strip: custody (holidays override schedule). '
+                        'Dots: exchange (yellow), check-in (green), issues (red), messaging (blue). '
+                        'Holiday icon when set. Tap a holiday for swap/time proposals or another day for details.',
                         style: PLDesign.caption.copyWith(height: 1.35),
                         textAlign: TextAlign.center,
                       ),
                     ),
                   ],
+                            );
+                          },
+                        );
+                      },
+                    );
+                  },
                 );
               },
             ),

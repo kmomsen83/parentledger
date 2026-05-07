@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/case_event.dart';
+import '../models/case_ledger_write_result.dart';
 import 'crashlytics_service.dart';
 import 'timeline_actor_resolver.dart';
 
@@ -45,12 +46,19 @@ class EventLoggerService {
   static Future<void> _callWithRetries(
     Future<void> Function() invoke,
   ) async {
+    await _callWithRetriesValue(() async {
+      await invoke();
+    });
+  }
+
+  static Future<T> _callWithRetriesValue<T>(
+    Future<T> Function() invoke,
+  ) async {
     Object? lastError;
     StackTrace? lastStack;
     for (var attempt = 0; attempt < _maxAttempts; attempt++) {
       try {
-        await invoke();
-        return;
+        return await invoke();
       } catch (e, st) {
         lastError = e;
         lastStack = st;
@@ -118,6 +126,41 @@ class EventLoggerService {
       actorName: name,
       metadata: metadata,
     );
+  }
+
+  /// Same as [logEventForActor], but returns the new ledger row id (for Storage paths / enrichments).
+  static Future<CaseLedgerWriteResult> logCaseEventForActorWithResult({
+    required String caseId,
+    required String type,
+    required String title,
+    required String description,
+    required String actorId,
+    Map<String, dynamic>? metadata,
+  }) async {
+    var name = 'Participant';
+    try {
+      final a = await TimelineActor.load(actorId);
+      name = a.fullName;
+    } catch (_) {}
+    return _callWithRetriesValue(() async {
+      final callable = _functions.httpsCallable('logCaseEvent');
+      final result = await callable.call(<String, dynamic>{
+        'caseId': caseId,
+        'type': _ledgerType(type),
+        'title': title,
+        'description': description,
+        'actorId': actorId,
+        'actorName': name,
+        'data': metadata ?? <String, dynamic>{},
+      });
+      final parsed = CaseLedgerWriteResult.fromCallableData(result.data);
+      if (parsed.eventId.isEmpty) {
+        throw EventLoggerException(
+          'Ledger callable returned no eventId (cannot attach enrichments)',
+        );
+      }
+      return parsed;
+    });
   }
 
   static Future<void> logEventForCurrentUser({

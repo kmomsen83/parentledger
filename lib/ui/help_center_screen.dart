@@ -3,6 +3,7 @@ import 'package:parentledger/l10n/context_l10n.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../design/design.dart';
+import 'ai_assistant_screen.dart';
 
 /// Entry point for help, FAQs, and future support channels.
 class HelpCenterScreen extends StatelessWidget {
@@ -96,10 +97,10 @@ class HelpCenterScreen extends StatelessWidget {
             context,
             icon: Icons.smart_toy_outlined,
             title: 'AI assistant',
-            subtitle: 'Coming soon — contextual help inside the app',
+            subtitle: 'Ask about features, exports, invites, messages, timeline, or next steps',
             onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text(context.tTone('aiChatSupportIsOn'))),
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(builder: (_) => const AiAssistantScreen()),
               );
             },
           ),

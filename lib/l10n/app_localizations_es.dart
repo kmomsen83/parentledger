@@ -2495,6 +2495,127 @@ class AppLocalizationsEs extends AppLocalizations {
   String get dashboardCaseSubtitle_legal => 'Así va tu caso de un vistazo';
 
   @override
+  String get dashboardPremiumHeadline_neutral =>
+      'Todo documentado. Basta de discusiones.';
+
+  @override
+  String get dashboardPremiumHeadline_professional =>
+      'Todo documentado. Basta de discusiones.';
+
+  @override
+  String get dashboardPremiumHeadline_legal =>
+      'Todo documentado. Basta de discusiones.';
+
+  @override
+  String get dashboardPremiumTagline_neutral =>
+      'Gastos, mensajes y calendario de custodia en un solo lugar.';
+
+  @override
+  String get dashboardPremiumTagline_professional =>
+      'Gastos, mensajes y calendario de custodia en un solo lugar.';
+
+  @override
+  String get dashboardPremiumTagline_legal =>
+      'Gastos, mensajes y calendario de custodia en un solo lugar.';
+
+  @override
+  String get messagesCardTitle_neutral => 'Mensajes';
+
+  @override
+  String get messagesCardTitle_professional => 'Mensajes';
+
+  @override
+  String get messagesCardTitle_legal => 'Mensajes';
+
+  @override
+  String get messagesPreviewLoading_neutral => 'Cargando mensajes recientes…';
+
+  @override
+  String get messagesPreviewLoading_professional =>
+      'Cargando mensajes recientes…';
+
+  @override
+  String get messagesPreviewLoading_legal => 'Cargando mensajes recientes…';
+
+  @override
+  String get messagesPreviewEmpty_neutral => 'No hay mensajes recientes';
+
+  @override
+  String get messagesPreviewEmpty_professional => 'No hay mensajes recientes';
+
+  @override
+  String get messagesPreviewEmpty_legal => 'No hay mensajes recientes';
+
+  @override
+  String get messagesUnreadNone_neutral => 'No hay mensajes sin leer';
+
+  @override
+  String get messagesUnreadNone_professional => 'No hay mensajes sin leer';
+
+  @override
+  String get messagesUnreadNone_legal => 'No hay mensajes sin leer';
+
+  @override
+  String get messagesUnreadOne_neutral => '1 mensaje sin leer';
+
+  @override
+  String get messagesUnreadOne_professional => '1 mensaje sin leer';
+
+  @override
+  String get messagesUnreadOne_legal => '1 mensaje sin leer';
+
+  @override
+  String messagesUnreadMany_neutral(int count) {
+    return '$count mensajes sin leer';
+  }
+
+  @override
+  String messagesUnreadMany_professional(int count) {
+    return '$count mensajes sin leer';
+  }
+
+  @override
+  String messagesUnreadMany_legal(int count) {
+    return '$count mensajes sin leer';
+  }
+
+  @override
+  String get balanceCardSecurePill_neutral =>
+      'Toda la actividad queda documentada de forma segura';
+
+  @override
+  String get balanceCardSecurePill_professional =>
+      'Toda la actividad queda documentada de forma segura';
+
+  @override
+  String get balanceCardSecurePill_legal =>
+      'Toda la actividad queda documentada de forma segura';
+
+  @override
+  String get dashboardTrustBannerPrimary_neutral =>
+      'Cada gasto y mensaje queda registrado.';
+
+  @override
+  String get dashboardTrustBannerPrimary_professional =>
+      'Cada gasto y mensaje queda registrado.';
+
+  @override
+  String get dashboardTrustBannerPrimary_legal =>
+      'Cada gasto y mensaje queda registrado.';
+
+  @override
+  String get dashboardTrustBannerSecondary_neutral =>
+      'Exporta el historial en cualquier momento para mediación o tribunales.';
+
+  @override
+  String get dashboardTrustBannerSecondary_professional =>
+      'Exporta el historial en cualquier momento para mediación o tribunales.';
+
+  @override
+  String get dashboardTrustBannerSecondary_legal =>
+      'Exporta el historial en cualquier momento para mediación o tribunales.';
+
+  @override
   String get addExpense_neutral => '+ Añadir gasto';
 
   @override
@@ -2520,6 +2641,15 @@ class AppLocalizationsEs extends AppLocalizations {
 
   @override
   String get requestReimbursement_legal => 'Solicitar reembolso';
+
+  @override
+  String get requestPayment_neutral => 'Solicitar pago';
+
+  @override
+  String get requestPayment_professional => 'Solicitar pago';
+
+  @override
+  String get requestPayment_legal => 'Solicitar pago';
 
   @override
   String get noMessages_neutral => 'Aún no hay mensajes';
@@ -3769,22 +3899,22 @@ class AppLocalizationsEs extends AppLocalizations {
   String get caseTimeline2_legal => 'Case Timeline2';
 
   @override
-  String get mom_neutral => 'Mamá';
+  String get mom_neutral => 'Madre';
 
   @override
-  String get mom_professional => 'Mamá';
+  String get mom_professional => 'Madre';
 
   @override
-  String get mom_legal => 'Mamá';
+  String get mom_legal => 'Madre';
 
   @override
-  String get dad_neutral => 'Papá';
+  String get dad_neutral => 'Padre';
 
   @override
-  String get dad_professional => 'Papá';
+  String get dad_professional => 'Padre';
 
   @override
-  String get dad_legal => 'Papá';
+  String get dad_legal => 'Padre';
 
   @override
   String get guardian_neutral => 'Tutor';
@@ -3963,13 +4093,13 @@ class AppLocalizationsEs extends AppLocalizations {
   String get balanceUpdatedJustNow_legal => 'Actualizado ahora';
 
   @override
-  String get balanceUpdatedTodayIntro_neutral => 'Actualizado hoy ·';
+  String get balanceUpdatedTodayIntro_neutral => 'Actualizado hoy •';
 
   @override
-  String get balanceUpdatedTodayIntro_professional => 'Actualizado hoy ·';
+  String get balanceUpdatedTodayIntro_professional => 'Actualizado hoy •';
 
   @override
-  String get balanceUpdatedTodayIntro_legal => 'Actualizado hoy ·';
+  String get balanceUpdatedTodayIntro_legal => 'Actualizado hoy •';
 
   @override
   String get completeWorkspaceSetupToTrackBalances_neutral =>

@@ -1,0 +1,16 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "REPLACE_APPLE_TEAM_ID.com.parentledger.app",
+        "paths": [
+          "/invite/coparent/*",
+          "/invite/attorney/*",
+          "/invite/*",
+          "/invite"
+        ]
+      }
+    ]
+  }
+}

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:parentledger/l10n/context_l10n.dart';
 import 'package:intl/intl.dart';
@@ -10,8 +11,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:parentledger/l10n/app_localizations.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
 import '../l10n/tone_models.dart';
 import '../l10n/tone_string_resolver.g.dart';
 import '../providers/case_context.dart';
@@ -44,19 +43,19 @@ import 'action_inbox_screen.dart';
 import 'trust_evidence_status_screen.dart';
 import 'onboarding_progress_map_screen.dart';
 import 'first_run_command_center_screen.dart';
-import 'feedback_screen.dart';
 
 import '../services/exchange_service.dart';
 import '../models/exchange_model.dart';
 import '../services/ai_service.dart';
 import 'widgets/ai_loading_skeleton.dart';
 import 'widgets/request_reimbursement_sheet.dart';
-import 'widgets/subscription_access_reminder_banner.dart';
 import 'widgets/subscription_trial_banner.dart';
 import '../services/message_service.dart';
 import '../util/exchange_maps_uri.dart';
 import 'case_insights_screen.dart';
 import 'route_case_guard.dart';
+import 'enter_invite_code_screen.dart';
+import '../services/invite_link_service.dart';
 import 'timeline_violations_screen.dart';
 import '../services/timeline_violation_filter.dart';
 import '../services/guided_onboarding_service.dart';
@@ -64,6 +63,9 @@ import '../services/notification_service.dart';
 import 'submit_expense_screen.dart';
 import 'elite_case_file_hub_screen.dart';
 import 'widgets/guided_step_card.dart';
+import 'widgets/premium_locked_tap.dart';
+import 'widgets/premium_teaser_shell.dart';
+import 'widgets/premium_upgrade_sheet.dart';
 
 class DashboardScreen extends StatefulWidget {
 const DashboardScreen({super.key});
@@ -75,8 +77,6 @@ _DashboardScreenState();
 
 class _DashboardScreenState extends State<DashboardScreen>
 with TickerProviderStateMixin {
-static const _feedbackTooltipShownKey = 'feedback_tooltip_shown';
-
 late AnimationController pulseController;
 
 /// Avoid duplicate [CustodyRiskInsightsService.refresh] per case.
@@ -116,8 +116,24 @@ int _guidedMessages = 0;
 int _guidedExpenses = 0;
 int _guidedExchanges = 0;
 bool _showOnboardingSuccess = false;
-final GlobalKey _feedbackIconKey = GlobalKey();
-OverlayEntry? _feedbackTooltipEntry;
+bool _openedCoparentInviteFromLink = false;
+
+void _maybeOpenCoparentInviteFromLink() {
+  if (_openedCoparentInviteFromLink) return;
+  final code = InviteLinkService.pendingInviteCode.value;
+  if (code == null || code.isEmpty) return;
+  _openedCoparentInviteFromLink = true;
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!mounted) return;
+    unawaited(
+      Navigator.of(context).push<void>(
+        MaterialPageRoute<void>(
+          builder: (_) => EnterInviteCodeScreen(initialCode: code),
+        ),
+      ),
+    );
+  });
+}
 
 @override
 void initState() {
@@ -127,10 +143,6 @@ pulseController = AnimationController(
 vsync: this,
 duration: const Duration(seconds: 2),
 )..repeat(reverse: true);
-
-Future.delayed(const Duration(milliseconds: 500), () {
-  _maybeShowFeedbackTooltip();
-});
 
 _unreadTimer = Timer.periodic(
 const Duration(seconds: 25),
@@ -142,6 +154,7 @@ _loadRiskEvents();
 unawaited(_loadDashboardAi());
 unawaited(_loadGuidedOnboardingState());
 _maybeShowFirstRunExperience();
+_maybeOpenCoparentInviteFromLink();
 });
 }
 
@@ -150,7 +163,62 @@ int get _guidedCompletedSteps =>
     (_guidedExpenses > 0 ? 1 : 0) +
     (_guidedExchanges > 0 ? 1 : 0);
 bool get _showGuidedHome => _isFirstTimeUser && !_onboardingCompleted;
-bool get _insightsUnlocked => _guidedCompletedSteps >= 3;
+/// Parents without full access: same dashboard layout; tiles are interaction-locked only.
+bool _isParentPremiumLocked() {
+  final s = context.watch<CaseContext>();
+  if (s.isAttorney) return false;
+  return !s.unlockedParentPremiumFeatures;
+}
+
+Widget _wrapPremiumDashboardTile({
+  required bool locked,
+  required DashboardPremiumFeature feature,
+  required Widget child,
+  double shellRadius = 22,
+}) {
+  if (!locked) return child;
+  return PremiumLockedTapHost(
+    locked: true,
+    onLockedTap: () => showPremiumUpgradeSheet(context, feature: feature),
+    child: PremiumTeaserShell(
+      locked: true,
+      borderRadius: shellRadius,
+      child: IgnorePointer(
+        ignoring: true,
+        child: child,
+      ),
+    ),
+  );
+}
+
+Widget _insightsSection(BuildContext context) {
+  final locked = _isParentPremiumLocked();
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      _wrapPremiumDashboardTile(
+        locked: locked,
+        feature: DashboardPremiumFeature.insightsCluster,
+        shellRadius: 24,
+        child: _buildCaseComplianceCard(context),
+      ),
+      const SizedBox(height: 12),
+      _wrapPremiumDashboardTile(
+        locked: locked,
+        feature: DashboardPremiumFeature.insightsCluster,
+        shellRadius: 22,
+        child: _buildDashboardAiInsights(context),
+      ),
+      const SizedBox(height: 8),
+      _wrapPremiumDashboardTile(
+        locked: locked,
+        feature: DashboardPremiumFeature.insightsCluster,
+        shellRadius: 16,
+        child: _violationsCommandTile(context),
+      ),
+    ],
+  );
+}
 
 Future<void> _loadGuidedOnboardingState() async {
   final caseId = context.read<CaseContext>().caseId;
@@ -698,7 +766,6 @@ _cachedCaseEventsStream = null;
 _cachedConversationsStream = null;
 _cachedRiskDocStream = null;
 _cachedLegalSummaryQueryStream = null;
-_feedbackTooltipEntry?.remove();
 pulseController.dispose();
 super.dispose();
 }
@@ -735,102 +802,6 @@ void _syncDashboardCaseStreams(String? caseId) {
       .snapshots();
 }
 
-Future<void> _maybeShowFeedbackTooltip() async {
-if (!mounted) return;
-final prefs = await SharedPreferences.getInstance();
-final shown = prefs.getBool(_feedbackTooltipShownKey) ?? false;
-if (shown || !mounted) return;
-
-showFeedbackTooltip(context);
-await prefs.setBool(_feedbackTooltipShownKey, true);
-}
-
-void _removeFeedbackTooltip() {
-_feedbackTooltipEntry?.remove();
-_feedbackTooltipEntry = null;
-}
-
-void showFeedbackTooltip(BuildContext context) {
-if (!mounted || _feedbackTooltipEntry != null) return;
-final iconContext = _feedbackIconKey.currentContext;
-if (iconContext == null) return;
-
-final box = iconContext.findRenderObject();
-if (box is! RenderBox) return;
-final iconOffset = box.localToGlobal(Offset.zero);
-final iconSize = box.size;
-final screenWidth = MediaQuery.of(context).size.width;
-final screenHeight = MediaQuery.of(context).size.height;
-const bubbleWidth = 230.0;
-const bubbleHeight = 44.0;
-final left = (iconOffset.dx + (iconSize.width / 2) - (bubbleWidth / 2))
-    .clamp(12.0, screenWidth - bubbleWidth - 12.0);
-final belowTop = iconOffset.dy + iconSize.height + 8;
-final aboveTop = iconOffset.dy - bubbleHeight - 12;
-final showAbove = belowTop + bubbleHeight + 12 > screenHeight && aboveTop > 8;
-final top = showAbove ? aboveTop : belowTop;
-final arrowLeft = (iconOffset.dx + (iconSize.width / 2) - 8)
-    .clamp(20.0, screenWidth - 20.0);
-
-_feedbackTooltipEntry = OverlayEntry(
-  builder: (context) => Positioned.fill(
-    child: GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onTap: _removeFeedbackTooltip,
-      child: Stack(
-        children: [
-          Positioned(
-            left: left,
-            top: top,
-            width: bubbleWidth,
-            child: Material(
-              color: Colors.transparent,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1D2330),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: PLDesign.border.withValues(alpha: 0.7)),
-                  boxShadow: PLDesign.softShadow,
-                ),
-                child: const Text(
-                  'Send feedback — help us improve',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            left: arrowLeft,
-            top: showAbove ? top + bubbleHeight - 6 : top - 6,
-            child: Transform.rotate(
-              angle: showAbove ? -0.785398 : 0.785398,
-              child: Container(
-                width: 12,
-                height: 12,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF1D2330),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    ),
-  ),
-);
-
-Overlay.of(context).insert(_feedbackTooltipEntry!);
-Future.delayed(const Duration(seconds: 4), () {
-  if (!mounted) return;
-  _removeFeedbackTooltip();
-});
-}
-
 Future<void> go(Widget screen) async {
 await Navigator.push(
 context,
@@ -839,6 +810,19 @@ MaterialPageRoute(builder: (_) => screen),
 if (mounted) {
   unawaited(_loadGuidedOnboardingState());
 }
+}
+
+/// [ProfileScreen] uses [CupertinoPageRoute] so iOS edge swipe-back works.
+Future<void> _goProfile() async {
+  await Navigator.push<void>(
+    context,
+    CupertinoPageRoute<void>(
+      builder: (_) => const ProfileScreen(),
+    ),
+  );
+  if (mounted) {
+    unawaited(_loadGuidedOnboardingState());
+  }
 }
 
 bool _isToday(DateTime d) {
@@ -879,18 +863,132 @@ String _balanceCardUpdatedLine(
   return '${toneString(l10n, 'balanceUpdatedPrefix', tone)} ${DateFormat.MMMd(loc).format(then)}';
 }
 
+String _messagesUnreadSummaryLine(BuildContext context, int unread) {
+  if (unread <= 0) return context.tTone('messagesUnreadNone');
+  if (unread == 1) return context.tTone('messagesUnreadOne');
+  return context.tMessagesUnreadCount(unread);
+}
+
+Widget _dashboardTrustBanner(BuildContext context) {
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+    decoration: BoxDecoration(
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          PLDesign.success.withValues(alpha: 0.28),
+          PLDesign.success.withValues(alpha: 0.09),
+        ],
+      ),
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: PLDesign.success.withValues(alpha: 0.4)),
+      boxShadow: [
+        BoxShadow(
+          color: PLDesign.success.withValues(alpha: 0.2),
+          blurRadius: 20,
+          offset: const Offset(0, 8),
+        ),
+      ],
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          context.tTone('dashboardTrustBannerPrimary'),
+          style: PLDesign.body.copyWith(
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+            height: 1.3,
+            color: PLDesign.textPrimary,
+            letterSpacing: -0.2,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          context.tTone('dashboardTrustBannerSecondary'),
+          style: PLDesign.caption.copyWith(
+            fontSize: 13.5,
+            height: 1.4,
+            color: PLDesign.textMuted.withValues(alpha: 0.95),
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _messagesViewAllCta(BuildContext context) {
+  return Material(
+    color: Colors.transparent,
+    borderRadius: BorderRadius.circular(18),
+    child: InkWell(
+      onTap: () => go(const MessagesInboxScreen()),
+      borderRadius: BorderRadius.circular(18),
+      splashColor: Colors.white.withValues(alpha: 0.12),
+      highlightColor: Colors.white.withValues(alpha: 0.06),
+      child: Ink(
+        height: 52,
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xff4f8dff), Color(0xff2f6ce5)],
+          ),
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x3B2F6CE5),
+              blurRadius: 16,
+              offset: Offset(0, 7),
+            ),
+          ],
+        ),
+        child: Center(
+          child: Text(
+            context.tTone('viewAllThreads'),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 Widget _balanceCardShell({
   required String balanceLabel,
   required Widget mainValue,
   required String updatedLine,
+  String? securePillText,
 }) {
   return Container(
     padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
     decoration: BoxDecoration(
-      color: PLDesign.card,
+      gradient: LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          PLDesign.card,
+          Color.lerp(PLDesign.card, const Color(0xff1a2a3d), 0.35) ?? PLDesign.card,
+        ],
+      ),
       borderRadius: BorderRadius.circular(20),
-      border: Border.all(color: PLDesign.border.withValues(alpha: 0.9)),
-      boxShadow: PLDesign.softShadow,
+      border: Border.all(color: PLDesign.border.withValues(alpha: 0.85)),
+      boxShadow: [
+        ...PLDesign.softShadow,
+        BoxShadow(
+          color: PLDesign.primary.withValues(alpha: 0.12),
+          blurRadius: 22,
+          offset: const Offset(0, 10),
+        ),
+      ],
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -913,17 +1011,62 @@ Widget _balanceCardShell({
             height: 1.3,
           ),
         ),
+        if (securePillText != null) ...[
+          const SizedBox(height: 14),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+            decoration: BoxDecoration(
+              color: PLDesign.success.withValues(alpha: 0.16),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                color: PLDesign.success.withValues(alpha: 0.35),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.verified_user_outlined,
+                  size: 17,
+                  color: PLDesign.success.withValues(alpha: 0.95),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    securePillText,
+                    style: PLDesign.caption.copyWith(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: PLDesign.success.withValues(alpha: 0.95),
+                      height: 1.25,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ],
     ),
   );
 }
 
 void _openAddExpense() {
-  final caseId = context.read<CaseContext>().caseId;
+  final session = context.read<CaseContext>();
+  final caseId = session.caseId;
   if (caseId == null) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(context.tTone('linkYourCaseInWorkspace')),
+      ),
+    );
+    return;
+  }
+  if (!session.isAttorney && !session.unlockedParentPremiumFeatures) {
+    unawaited(
+      showPremiumUpgradeSheet(
+        context,
+        feature: DashboardPremiumFeature.expenseLedger,
       ),
     );
     return;
@@ -947,11 +1090,12 @@ Widget _buildExpenseBalanceAndActions(BuildContext context) {
   final session = context.watch<CaseContext>();
   final caseId = session.caseId;
   final uid = FirebaseAuth.instance.currentUser?.uid;
-  final coparentId = session.coparentId;
   final user = FirebaseAuth.instance.currentUser;
 
+  final securePill = context.tTone('balanceCardSecurePill');
+
   Widget messagesBlock() => Padding(
-        padding: const EdgeInsets.only(top: 2),
+        padding: const EdgeInsets.only(top: 4),
         child: _buildMessagesHero(context, user),
       );
 
@@ -964,16 +1108,16 @@ Widget _buildExpenseBalanceAndActions(BuildContext context) {
             thickness: 1,
             color: PLDesign.border.withValues(alpha: 0.45),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
           _dashboardPrimaryButton(
             label: docs.isEmpty
                 ? context.tTone('addFirstExpense')
                 : context.tTone('addExpense'),
             onTap: _openAddExpense,
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           _dashboardSecondaryButton(
-            label: context.tTone('requestReimbursement'),
+            label: context.tTone('requestPayment'),
             onTap: _openRequestReimbursement,
             enabled: true,
           ),
@@ -996,10 +1140,13 @@ Widget _buildExpenseBalanceAndActions(BuildContext context) {
             ),
           ),
           updatedLine: context.tTone('completeWorkspaceSetupToTrackBalances'),
+          securePillText: securePill,
         ),
-        const SizedBox(height: 14),
+        const SizedBox(height: 20),
         messagesBlock(),
         actionBlock(const []),
+        const SizedBox(height: 20),
+        _dashboardTrustBanner(context),
       ],
     );
   }
@@ -1015,8 +1162,10 @@ Widget _buildExpenseBalanceFromExpenseSnapshot(
   String uid,
   String? coparentId,
 ) {
+  final securePill = context.tTone('balanceCardSecurePill');
+
   Widget messagesBlock() => Padding(
-        padding: const EdgeInsets.only(top: 2),
+        padding: const EdgeInsets.only(top: 4),
         child: _buildMessagesHero(context, FirebaseAuth.instance.currentUser),
       );
 
@@ -1029,16 +1178,16 @@ Widget _buildExpenseBalanceFromExpenseSnapshot(
             thickness: 1,
             color: PLDesign.border.withValues(alpha: 0.45),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
           _dashboardPrimaryButton(
             label: docs.isEmpty
                 ? context.tTone('addFirstExpense')
                 : context.tTone('addExpense'),
             onTap: _openAddExpense,
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           _dashboardSecondaryButton(
-            label: context.tTone('requestReimbursement'),
+            label: context.tTone('requestPayment'),
             onTap: _openRequestReimbursement,
             enabled: true,
           ),
@@ -1067,6 +1216,7 @@ Widget _buildExpenseBalanceFromExpenseSnapshot(
         ),
       ),
       updatedLine: updatedLine,
+      securePillText: securePill,
     );
   } else if (docs.isEmpty) {
     balanceCard = _balanceCardShell(
@@ -1081,6 +1231,7 @@ Widget _buildExpenseBalanceFromExpenseSnapshot(
         ),
       ),
       updatedLine: updatedLine,
+      securePillText: securePill,
     );
   } else {
     final net = CaseExpenseService.netSplitBalanceForUser(
@@ -1113,6 +1264,7 @@ Widget _buildExpenseBalanceFromExpenseSnapshot(
         ),
       ),
       updatedLine: updatedLine,
+      securePillText: securePill,
     );
   }
 
@@ -1120,9 +1272,11 @@ Widget _buildExpenseBalanceFromExpenseSnapshot(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       balanceCard,
-      const SizedBox(height: 14),
+      const SizedBox(height: 20),
       messagesBlock(),
       actionBlock(docs),
+      const SizedBox(height: 20),
+      _dashboardTrustBanner(context),
     ],
   );
 }
@@ -1137,22 +1291,33 @@ Widget _dashboardPrimaryButton({
     child: InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(18),
-      splashColor: Colors.white.withValues(alpha: 0.12),
-      highlightColor: Colors.white.withValues(alpha: 0.06),
+      splashColor: Colors.white.withValues(alpha: 0.14),
+      highlightColor: Colors.white.withValues(alpha: 0.07),
       child: Ink(
-        height: 54,
+        height: 58,
         decoration: BoxDecoration(
           gradient: const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xff4f8dff), Color(0xff2f6ce5)],
+            colors: [
+              Color(0xff5c97ff),
+              Color(0xff4f8dff),
+              Color(0xff2568d4),
+            ],
+            stops: [0.0, 0.45, 1.0],
           ),
           borderRadius: BorderRadius.circular(18),
           boxShadow: const [
             BoxShadow(
-              color: Color(0x3B2F6CE5),
-              blurRadius: 14,
-              offset: Offset(0, 7),
+              color: Color(0x522F6CE5),
+              blurRadius: 22,
+              offset: Offset(0, 10),
+              spreadRadius: -2,
+            ),
+            BoxShadow(
+              color: Color(0x284f8dff),
+              blurRadius: 28,
+              offset: Offset(0, 14),
             ),
           ],
         ),
@@ -1161,9 +1326,9 @@ Widget _dashboardPrimaryButton({
             label,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 16.5,
+              fontSize: 17,
               fontWeight: FontWeight.w800,
-              letterSpacing: 0.2,
+              letterSpacing: 0.25,
             ),
           ),
         ),
@@ -1183,24 +1348,47 @@ Widget _dashboardSecondaryButton({
       onTap: enabled ? onTap : null,
       borderRadius: BorderRadius.circular(16),
       child: Ink(
-        height: 50,
+        height: 52,
         decoration: BoxDecoration(
-          color: const Color(0xff131c2a),
+          color: const Color(0xff0d1520),
           borderRadius: BorderRadius.circular(16),
           border: Border.all(
             color: enabled
-                ? PLDesign.primary.withValues(alpha: 0.3)
+                ? PLDesign.primary.withValues(alpha: 0.45)
                 : PLDesign.border.withValues(alpha: 0.75),
+            width: 1.1,
           ),
+          boxShadow: [
+            if (enabled)
+              BoxShadow(
+                color: PLDesign.primary.withValues(alpha: 0.12),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+          ],
         ),
         child: Center(
-          child: Text(
-            label,
-            style: PLDesign.body.copyWith(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: enabled ? PLDesign.textPrimary : PLDesign.textMuted,
-            ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.attach_money_rounded,
+                size: 20,
+                color: enabled
+                    ? PLDesign.textPrimary
+                    : PLDesign.textMuted,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: PLDesign.body.copyWith(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  color: enabled ? PLDesign.textPrimary : PLDesign.textMuted,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -1386,7 +1574,17 @@ Widget _guidedHome(BuildContext context) {
           description: 'Track shared costs and reimbursements',
           cta: 'Add Expense',
           completed: _guidedExpenses > 0,
-          onTap: () => go(const SubmitExpenseScreen()),
+          onTap: () {
+            final s = context.read<CaseContext>();
+            if (!s.isAttorney && !s.unlockedParentPremiumFeatures) {
+              showPremiumUpgradeSheet(
+                context,
+                feature: DashboardPremiumFeature.expenseLedger,
+              );
+              return;
+            }
+            go(const SubmitExpenseScreen());
+          },
         ),
         const SizedBox(height: 10),
         GuidedStepCard(
@@ -1860,38 +2058,50 @@ final caseId = context.watch<CaseContext>().caseId;
 
 if (caseId == null) {
 final unread = _unreadCount;
-final unreadLine = unread <= 0
-? 'No unread messages'
-: unread == 1
-? '1 unread message'
-: '$unread unread messages';
+final unreadLine = _messagesUnreadSummaryLine(context, unread);
 final unreadStyle = unread > 0
 ? PLDesign.caption.copyWith(
 color: PLDesign.danger,
 fontWeight: FontWeight.w700,
-fontSize: 13,
+fontSize: 13.5,
 height: 1.25,
 )
 : PLDesign.caption.copyWith(
-color: PLDesign.textMuted,
+color: PLDesign.textMuted.withValues(alpha: 0.9),
 height: 1.25,
+fontSize: 13.5,
+fontWeight: FontWeight.w600,
 );
-return Material(
-color: PLDesign.card,
-elevation: 4,
-shadowColor: PLDesign.info.withValues(alpha: 0.45),
-shape: RoundedRectangleBorder(
+return Container(
+decoration: BoxDecoration(
 borderRadius: BorderRadius.circular(20),
-side: BorderSide(
+gradient: LinearGradient(
+begin: Alignment.topLeft,
+end: Alignment.bottomRight,
+colors: [
+PLDesign.card,
+Color.lerp(PLDesign.card, PLDesign.info, 0.07) ?? PLDesign.card,
+],
+),
+border: Border.all(
 color: PLDesign.info.withValues(alpha: 0.55),
 width: 1.6,
 ),
+boxShadow: [
+BoxShadow(
+color: PLDesign.info.withValues(alpha: 0.22),
+blurRadius: 16,
+offset: const Offset(0, 8),
 ),
+],
+),
+child: Material(
+color: Colors.transparent,
 child: InkWell(
 onTap: () => go(const MessagesInboxScreen()),
 borderRadius: BorderRadius.circular(20),
 child: Padding(
-padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
+padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
 child: Column(
 crossAxisAlignment: CrossAxisAlignment.stretch,
 children: [
@@ -1913,12 +2123,13 @@ crossAxisAlignment: CrossAxisAlignment.center,
 children: [
 Expanded(
 child: Text(
-context.tTone('messages'),
+context.tTone('messagesCardTitle'),
 maxLines: 1,
 overflow: TextOverflow.ellipsis,
 style: PLDesign.sectionTitle.copyWith(
-fontSize: 18,
-fontWeight: FontWeight.w700,
+fontSize: 19,
+fontWeight: FontWeight.w800,
+letterSpacing: -0.3,
 ),
 ),
 ),
@@ -1942,7 +2153,7 @@ spreadRadius: 0,
 ],
 ],
 ),
-const SizedBox(height: 6),
+const SizedBox(height: 10),
 Text(
 unreadLine,
 style: unreadStyle,
@@ -1952,7 +2163,7 @@ style: unreadStyle,
 ),
 ],
 ),
-const SizedBox(height: 14),
+const SizedBox(height: 18),
 Text(
 'Link a case to use messages',
 maxLines: 1,
@@ -1961,17 +2172,14 @@ style: PLDesign.body.copyWith(
 color: PLDesign.textMuted,
 height: 1.35,
 fontStyle: FontStyle.italic,
+fontSize: 15,
+fontWeight: FontWeight.w500,
 ),
 ),
-const SizedBox(height: 18),
-SizedBox(
-width: double.infinity,
-child: FilledButton(
-onPressed: () => go(const MessagesInboxScreen()),
-child: Text(context.tTone('viewAllThreads')),
-),
-),
+const SizedBox(height: 20),
+_messagesViewAllCta(context),
 ],
+),
 ),
 ),
 ),
@@ -1983,22 +2191,20 @@ stream: _cachedConversationsStream!,
 builder: (context, convSnap) {
 final unread = _unreadCount;
 
-final unreadLine = unread <= 0
-? "No unread messages"
-: unread == 1
-? "1 unread message"
-: "$unread unread messages";
+final unreadLine = _messagesUnreadSummaryLine(context, unread);
 
 final unreadStyle = unread > 0
 ? PLDesign.caption.copyWith(
 color: PLDesign.danger,
 fontWeight: FontWeight.w700,
-fontSize: 13,
+fontSize: 13.5,
 height: 1.25,
 )
 : PLDesign.caption.copyWith(
-color: PLDesign.textMuted,
+color: PLDesign.textMuted.withValues(alpha: 0.9),
 height: 1.25,
+fontSize: 13.5,
+fontWeight: FontWeight.w600,
 );
 
 final waiting =
@@ -2021,8 +2227,10 @@ lastPreview == null ||
 lastPreview.isEmpty);
 
 final previewBase = PLDesign.body.copyWith(
-color: PLDesign.textMuted,
-height: 1.35,
+color: PLDesign.textPrimary.withValues(alpha: 0.82),
+height: 1.38,
+fontSize: 15.5,
+fontWeight: FontWeight.w600,
 );
 final keywordHi = previewBase.copyWith(
 color: PLDesign.warning,
@@ -2044,7 +2252,7 @@ final shadowColor = cardUrgent
 Widget previewWidget;
 if (waiting) {
 previewWidget = Text(
-"Loading recent messages…",
+context.tTone('messagesPreviewLoading'),
 maxLines: 1,
 overflow: TextOverflow.ellipsis,
 style: previewBase.copyWith(
@@ -2054,7 +2262,7 @@ color: PLDesign.textMuted.withValues(alpha: 0.85),
 );
 } else if (noRecent) {
 previewWidget = Text(
-"No recent messages",
+context.tTone('messagesPreviewEmpty'),
 maxLines: 1,
 overflow: TextOverflow.ellipsis,
 style: previewBase.copyWith(
@@ -2092,22 +2300,41 @@ go(const MessagesInboxScreen());
 }
 }
 
-return Material(
-color: PLDesign.card,
-elevation: cardUrgent ? 6 : 4,
-shadowColor: shadowColor,
-shape: RoundedRectangleBorder(
+return Container(
+decoration: BoxDecoration(
 borderRadius: BorderRadius.circular(20),
-side: BorderSide(
+gradient: LinearGradient(
+begin: Alignment.topLeft,
+end: Alignment.bottomRight,
+colors: [
+PLDesign.card,
+Color.lerp(
+PLDesign.card,
+cardUrgent ? PLDesign.warning : PLDesign.info,
+0.08,
+) ??
+PLDesign.card,
+],
+),
+border: Border.all(
 color: borderColor,
 width: cardUrgent ? 2 : 1.6,
 ),
+boxShadow: [
+BoxShadow(
+color: shadowColor.withValues(alpha: cardUrgent ? 0.45 : 0.35),
+blurRadius: cardUrgent ? 18 : 14,
+offset: const Offset(0, 8),
 ),
+],
+),
+child: Material(
+color: Colors.transparent,
 child: InkWell(
 onTap: openMessagesQuick,
 borderRadius: BorderRadius.circular(20),
 child: Padding(
-padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
+padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
 child: Column(
 crossAxisAlignment: CrossAxisAlignment.stretch,
 children: [
@@ -2129,12 +2356,13 @@ crossAxisAlignment: CrossAxisAlignment.center,
 children: [
 Expanded(
 child: Text(
-context.tTone('messages'),
+context.tTone('messagesCardTitle'),
 maxLines: 1,
 overflow: TextOverflow.ellipsis,
 style: PLDesign.sectionTitle.copyWith(
-fontSize: 18,
-fontWeight: FontWeight.w700,
+fontSize: 19,
+fontWeight: FontWeight.w800,
+letterSpacing: -0.3,
 ),
 ),
 ),
@@ -2158,7 +2386,7 @@ spreadRadius: 0,
 ],
 ],
 ),
-const SizedBox(height: 6),
+const SizedBox(height: 10),
 Text(
 unreadLine,
 style: unreadStyle,
@@ -2168,12 +2396,12 @@ style: unreadStyle,
 ),
 ],
 ),
-const SizedBox(height: 14),
+const SizedBox(height: 18),
 previewWidget,
 if (!waiting &&
 topThread != null &&
 topThread.data()['updatedAt'] is Timestamp) ...[
-const SizedBox(height: 8),
+const SizedBox(height: 10),
 Text(
 _relativeMessageTime(
 topThread.data()['updatedAt'] as Timestamp,
@@ -2186,15 +2414,10 @@ letterSpacing: 0.15,
 ),
 ),
 ],
-const SizedBox(height: 18),
-SizedBox(
-width: double.infinity,
-child: FilledButton(
-onPressed: () => go(const MessagesInboxScreen()),
-child: Text(context.tTone('viewAllThreads')),
-),
-),
+const SizedBox(height: 20),
+_messagesViewAllCta(context),
 ],
+),
 ),
 ),
 ),
@@ -2345,7 +2568,8 @@ const Icon(Icons.chevron_right, color: Colors.white54, size: 20),
 
 /// Premium case file entry: legal exports, live financials, activity, children.
 Widget _eliteCaseFileEntry(BuildContext context) {
-  return Material(
+  final locked = _isParentPremiumLocked();
+  final inner = Material(
     color: Colors.transparent,
     child: InkWell(
       onTap: () => go(const EliteCaseFileHubScreen()),
@@ -2399,6 +2623,12 @@ Widget _eliteCaseFileEntry(BuildContext context) {
         ),
       ),
     ),
+  );
+  return _wrapPremiumDashboardTile(
+    locked: locked,
+    feature: DashboardPremiumFeature.caseFile,
+    shellRadius: 24,
+    child: inner,
   );
 }
 
@@ -2554,45 +2784,83 @@ size: 14,
 );
 }
 
-Widget tool(IconData icon, String label, VoidCallback tap) {
-return pressable(
-onTap: tap,
-child: Container(
-padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 8),
-decoration: BoxDecoration(
-color: const Color(0xff0c1018),
-borderRadius: PLDesign.r20,
-border: Border.all(
-color: PLDesign.premiumGold.withValues(alpha: 0.08),
-),
-boxShadow: const [
-BoxShadow(
-color: Color(0x42000000),
-blurRadius: 16,
-offset: Offset(0, 8),
-),
-],
-),
-child: Column(
-mainAxisAlignment: MainAxisAlignment.center,
-children: [
-Icon(icon, color: PLDesign.premiumGold.withValues(alpha: 0.85), size: 26),
-const SizedBox(height: 10),
-Text(
-label,
-textAlign: TextAlign.center,
-maxLines: 2,
-overflow: TextOverflow.ellipsis,
-style: PLDesign.body.copyWith(
-fontWeight: FontWeight.w600,
-fontSize: 13,
-height: 1.2,
-),
-),
-],
-),
-),
-);
+Widget _dashboardTool(
+  IconData icon,
+  String label,
+  VoidCallback tap, {
+  bool premiumTool = false,
+  bool calendarLimited = false,
+  DashboardPremiumFeature premiumFeature = DashboardPremiumFeature.complianceReports,
+}) {
+  final parentLocked = _isParentPremiumLocked();
+  final locked = premiumTool && parentLocked;
+  final limitedCalendar = calendarLimited && parentLocked;
+
+  final inner = Container(
+    padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 8),
+    decoration: BoxDecoration(
+      color: const Color(0xff0c1018),
+      borderRadius: PLDesign.r20,
+      border: Border.all(
+        color: PLDesign.premiumGold.withValues(alpha: 0.08),
+      ),
+      boxShadow: const [
+        BoxShadow(
+          color: Color(0x42000000),
+          blurRadius: 16,
+          offset: Offset(0, 8),
+        ),
+      ],
+    ),
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Icon(icon, color: PLDesign.premiumGold.withValues(alpha: 0.85), size: 26),
+        const SizedBox(height: 10),
+        Text(
+          label,
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: PLDesign.body.copyWith(
+            fontWeight: FontWeight.w600,
+            fontSize: 13,
+            height: 1.2,
+          ),
+        ),
+      ],
+    ),
+  );
+
+  if (limitedCalendar) {
+    return pressable(
+      onTap: tap,
+      child: ClipRRect(
+        borderRadius: PLDesign.r20,
+        child: Stack(
+          clipBehavior: Clip.hardEdge,
+          children: [
+            inner,
+            const LimitedCornerBadge(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  if (locked) {
+    return PremiumLockedTapHost(
+      locked: true,
+      onLockedTap: () => showPremiumUpgradeSheet(context, feature: premiumFeature),
+      child: PremiumTeaserShell(
+        locked: true,
+        borderRadius: 20,
+        child: inner,
+      ),
+    );
+  }
+
+  return pressable(onTap: tap, child: inner);
 }
 
 @override
@@ -2602,7 +2870,6 @@ const toolCrossCount = 3;
 
 final uid = FirebaseAuth.instance.currentUser?.uid;
 _syncNotificationUnreadStream(uid);
-final firstName = context.watch<CaseContext>().greetingFirstName;
 final caseId = context.watch<CaseContext>().caseId;
 final coparentId = context.watch<CaseContext>().coparentId;
 _syncDashboardCaseStreams(caseId);
@@ -2611,7 +2878,6 @@ if (caseId == null || uid == null) {
 return _dashboardScaffold(
 context,
 toolCrossCount: toolCrossCount,
-firstName: firstName,
 uid: uid,
 caseId: caseId,
 coparentId: coparentId,
@@ -2638,7 +2904,6 @@ if (headerSnap.hasError) {
 return _dashboardScaffold(
 context,
 toolCrossCount: toolCrossCount,
-firstName: firstName,
 uid: uid,
 caseId: caseId,
 coparentId: coparentId,
@@ -2656,7 +2921,6 @@ if (waitingHeader || !headerSnap.hasData) {
 return _dashboardScaffold(
 context,
 toolCrossCount: toolCrossCount,
-firstName: firstName,
 uid: uid,
 caseId: caseId,
 coparentId: coparentId,
@@ -2675,7 +2939,6 @@ tick.expenses,
 return _dashboardScaffold(
 context,
 toolCrossCount: toolCrossCount,
-firstName: firstName,
 uid: uid,
 caseId: caseId,
 coparentId: coparentId,
@@ -2691,7 +2954,6 @@ exchangePulseActive: _isActiveExchangeFor(tick.nextExchange),
 Widget _dashboardScaffold(
 BuildContext context, {
 required int toolCrossCount,
-required String firstName,
 required String? uid,
 required String? caseId,
 required String? coparentId,
@@ -2721,7 +2983,7 @@ stops: const [0.0, 1.0],
 ),
 SafeArea(
 child: ListView(
-padding: const EdgeInsets.fromLTRB(22, 18, 22, 100),
+padding: const EdgeInsets.fromLTRB(22, 20, 22, 100),
 children: [
 Stack(
 clipBehavior: Clip.none,
@@ -2755,21 +3017,21 @@ child: Column(
 crossAxisAlignment: CrossAxisAlignment.start,
 children: [
 Text(
-context.tWelcome(firstName),
+context.tTone('dashboardPremiumHeadline'),
 style: PLDesign.heroTitle.copyWith(
-fontSize: 27,
-height: 1.12,
-fontWeight: FontWeight.w700,
-letterSpacing: -0.5,
+fontSize: 24,
+height: 1.15,
+fontWeight: FontWeight.w800,
+letterSpacing: -0.45,
 ),
 ),
-const SizedBox(height: 6),
+const SizedBox(height: 8),
 Text(
-context.tTone('dashboardCaseSubtitle'),
+context.tTone('dashboardPremiumTagline'),
 style: PLDesign.caption.copyWith(
-color: PLDesign.textMuted,
-fontSize: 14,
-height: 1.35,
+color: PLDesign.textMuted.withValues(alpha: 0.88),
+fontSize: 14.5,
+height: 1.4,
 fontWeight: FontWeight.w500,
 ),
 ),
@@ -2819,10 +3081,10 @@ color: PLDesign.textPrimary,
 ),
 const SizedBox(width: 2),
 IconButton(
-onPressed: () => go(const FeedbackScreen()),
-key: _feedbackIconKey,
-icon: const Icon(Icons.feedback_outlined),
+onPressed: () => go(const MessagesInboxScreen()),
+icon: const Icon(Icons.chat_bubble_outline_rounded),
 color: PLDesign.textPrimary,
+tooltip: context.tTone('messagesCardTitle'),
 ),
 ],
 ),
@@ -2831,7 +3093,7 @@ color: PLDesign.textPrimary,
 ],
 ),
 
-const SizedBox(height: 14),
+const SizedBox(height: 22),
 
 expenseSnapshot == null
 ? _buildExpenseBalanceAndActions(context)
@@ -2842,16 +3104,23 @@ uid!,
 coparentId,
 ),
 
-const SizedBox(height: 22),
+const SizedBox(height: 28),
 ..._contextualNudges(),
-if (_guidedLoading) ...[
+if (_guidedLoading)
 const Padding(
-  padding: EdgeInsets.symmetric(vertical: 24),
-  child: Center(child: CircularProgressIndicator()),
+  padding: EdgeInsets.only(bottom: 16),
+  child: Center(
+    child: SizedBox(
+      width: 28,
+      height: 28,
+      child: CircularProgressIndicator(strokeWidth: 2),
+    ),
+  ),
 ),
-] else if (_showGuidedHome) ...[
+if (!_guidedLoading && _showGuidedHome) ...[
 _guidedHome(context),
-] else ...[
+const SizedBox(height: 20),
+],
 if (_showOnboardingSuccess)
 Container(
   margin: const EdgeInsets.only(bottom: 12),
@@ -2875,34 +3144,13 @@ const SizedBox(height: 14),
 _onboardingProgressStrip(context),
 const SizedBox(height: 8),
 const SubscriptionTrialBanner(),
-const SubscriptionAccessReminderBanner(),
 const SizedBox(height: 12),
 _eliteCaseFileEntry(context),
 const SizedBox(height: 4),
 
-if (_insightsUnlocked) ...[
 _sectionLabel('INSIGHTS'),
-_buildCaseComplianceCard(context),
-const SizedBox(height: 12),
-_buildDashboardAiInsights(context),
-const SizedBox(height: 8),
-_violationsCommandTile(context),
+_insightsSection(context),
 const SizedBox(height: 18),
-] else ...[
-Container(
-  padding: const EdgeInsets.all(14),
-  decoration: BoxDecoration(
-    color: PLDesign.card,
-    borderRadius: BorderRadius.circular(14),
-    border: Border.all(color: PLDesign.border),
-  ),
-  child: Text(
-    'Your case insights are now available after a bit more activity.',
-    style: PLDesign.caption.copyWith(height: 1.35),
-  ),
-),
-const SizedBox(height: 18),
-],
 _sectionLabel('SCHEDULE'),
 Row(children: [
 actionCard(
@@ -2976,27 +3224,63 @@ mainAxisSpacing: 14,
 crossAxisSpacing: 14,
 childAspectRatio: 1.02,
 children: [
-tool(Icons.calendar_month, "Calendar",
-() => go(const CalendarMonthViewScreen())),
-tool(Icons.handshake, "Proposals",
-() => go(const ProposalsListScreen())),
-tool(Icons.attach_money, "Expenses",
-() => go(const ExpensesListScreen())),
-tool(Icons.folder_outlined, "Documents",
-() => go(const DocumentsLibraryScreen())),
-tool(Icons.family_restroom_outlined, "Parenting",
-() => go(const ParentingTimeReportScreen())),
-tool(Icons.scale, "Compromise",
-() => go(const CompromiseDashboardScreen())),
-tool(Icons.checklist_rounded, "Action Inbox",
-() => go(const ActionInboxScreen())),
-tool(Icons.verified_user_outlined, "Trust",
-() => go(const TrustEvidenceStatusScreen())),
-tool(Icons.bar_chart, "Reports",
-() => go(const ComplianceReportScreen())),
-],
+_dashboardTool(
+    Icons.calendar_month,
+    "Calendar",
+    () => go(const CalendarMonthViewScreen()),
+    calendarLimited: true,
+),
+_dashboardTool(
+    Icons.handshake,
+    "Proposals",
+    () => go(const ProposalsListScreen()),
+    premiumTool: true,
+    premiumFeature: DashboardPremiumFeature.proposals,
+),
+_dashboardTool(
+    Icons.attach_money,
+    "Expenses",
+    () => go(const ExpensesListScreen()),
+    premiumTool: true,
+    premiumFeature: DashboardPremiumFeature.expenseLedger,
+),
+_dashboardTool(
+    Icons.folder_outlined,
+    "Documents",
+    () => go(const DocumentsLibraryScreen()),
+    premiumTool: true,
+    premiumFeature: DashboardPremiumFeature.documentsLibrary,
+),
+_dashboardTool(
+  Icons.family_restroom_outlined,
+  "Parenting",
+  () => go(const ParentingTimeReportScreen()),
+  premiumTool: true,
+  premiumFeature: DashboardPremiumFeature.parentingReport,
+),
+_dashboardTool(
+    Icons.scale,
+    "Compromise",
+    () => go(const CompromiseDashboardScreen()),
+    premiumTool: true,
+    premiumFeature: DashboardPremiumFeature.compromiseBoard,
+),
+_dashboardTool(Icons.checklist_rounded, "Action Inbox",
+    () => go(const ActionInboxScreen())),
+_dashboardTool(
+  Icons.verified_user_outlined,
+  "Trust",
+  () => go(const TrustEvidenceStatusScreen()),
+),
+_dashboardTool(
+  Icons.bar_chart,
+  "Reports",
+  () => go(const ComplianceReportScreen()),
+  premiumTool: true,
+  premiumFeature: DashboardPremiumFeature.complianceReports,
 ),
 ],
+),
 
 const SizedBox(height: 28),
 ],
@@ -3015,7 +3299,7 @@ onTap: (i) {
 if (i == 1) go(const CustodyRiskScreen());
 if (i == 2) go(const RecentActivityTimelineScreen());
 if (i == 3) go(const UpcomingExchangesListScreen());
-if (i == 4) go(const ProfileScreen());
+if (i == 4) _goProfile();
 },
 items: [
 BottomNavigationBarItem(icon: const Icon(Icons.home), label: context.tTone('navHome')),

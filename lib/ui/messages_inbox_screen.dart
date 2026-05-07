@@ -48,6 +48,7 @@ class MessagesInboxScreen extends StatefulWidget {
     required String caseId,
     required String conversationId,
     required String title,
+    String? initialComposerText,
   }) {
     Navigator.push(
       context,
@@ -56,6 +57,7 @@ class MessagesInboxScreen extends StatefulWidget {
           title: title,
           caseId: caseId,
           conversationId: conversationId,
+          initialComposerText: initialComposerText,
         ),
       ),
     );

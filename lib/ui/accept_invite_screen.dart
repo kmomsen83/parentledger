@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
 import 'package:parentledger/l10n/context_l10n.dart';
@@ -64,7 +65,7 @@ class _AcceptInviteScreenState extends State<AcceptInviteScreen> {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (_) => EntryScreen(inviteId: widget.inviteId),
+          builder: (_) => const EntryScreen(),
         ),
       );
       return;
@@ -74,6 +75,10 @@ class _AcceptInviteScreenState extends State<AcceptInviteScreen> {
 
     try {
       await InviteService.acceptInvite(widget.inviteId);
+      developer.log(
+        'acceptInvite ok inviteId=${widget.inviteId}',
+        name: 'InviteDeepLink',
+      );
       if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => const AppRouter()),

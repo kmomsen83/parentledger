@@ -54,4 +54,7 @@ class TimelineEventModel {
       type == CaseEventTypes.message ||
       type == 'message' ||
       type == 'message_sent';
+
+  /// From `cases/{caseId}/timeline/{eventId}` overlay (merged into [metadata]).
+  bool get isEvidence => metadata['isEvidence'] == true;
 }

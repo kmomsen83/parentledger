@@ -8,7 +8,7 @@ import 'package:share_plus/share_plus.dart';
 import '../design/design.dart';
 import '../services/invite_service.dart';
 
-/// Creates a pending case invite with [role] attorney and exposes the invite ID for sharing.
+/// Creates a pending case invite with [role] attorney and exposes path-only invite URLs.
 Future<void> showInviteAttorneySheet(BuildContext context) async {
   await showModalBottomSheet<void>(
     context: context,
@@ -27,20 +27,15 @@ class _InviteAttorneyBody extends StatefulWidget {
 
 class _InviteAttorneyBodyState extends State<_InviteAttorneyBody> {
   bool _working = false;
-  String? _inviteId;
+  AttorneyInviteLinks? _links;
   String? _error;
   final _recipientEmail = TextEditingController();
 
-  String _inviteUrl(String id) => 'https://parentledger.app/invite?id=$id';
-  String _appDeepLink(String id) => 'parentledger://invite?id=$id';
-  String _shareMessage(String id) => '''
-Attorney invitation — ParentLedger (read-only case access)
+  String _shareBody(String universalLink) =>
+      '''Attorney invitation — ParentLedger (read-only case access)
 
-Open on mobile:
-${_inviteUrl(id)}
-
-Invite code (fallback): $id
-Direct deep link: ${_appDeepLink(id)}
+Tap to open in the app:
+$universalLink
 ''';
 
   @override
@@ -66,18 +61,59 @@ Direct deep link: ${_appDeepLink(id)}
       if (email.isEmpty || !email.contains('@')) {
         throw StateError('Enter attorney email before generating invite.');
       }
-      final id = await InviteService.createAttorneyInvite(
+      final links = await InviteService.createAttorneyInvite(
         caseId: caseId,
         fromUserId: uid,
         intendedRecipientEmail: email,
       );
+      if (links.token.isEmpty || links.universalLink.isEmpty) {
+        throw StateError('Invite generation failed: missing token or universal link.');
+      }
       if (!mounted) return;
-      setState(() => _inviteId = id);
+      setState(() {
+        _links = links;
+      });
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
       if (mounted) setState(() => _working = false);
     }
+  }
+
+  Future<void> _shareUniversalLink() async {
+    final links = _links;
+    if (links == null ||
+        links.token.isEmpty ||
+        links.universalLink.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Invite link is not ready. Generate the invite first.'),
+        ),
+      );
+      return;
+    }
+    await SharePlus.instance.share(
+      ShareParams(text: _shareBody(links.universalLink)),
+    );
+  }
+
+  Future<void> _copyUniversalLink() async {
+    final links = _links;
+    if (links == null ||
+        links.token.isEmpty ||
+        links.universalLink.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Invite link is not ready.')),
+      );
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: _shareBody(links.universalLink)));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Invite message copied')),
+    );
   }
 
   @override
@@ -116,12 +152,11 @@ Direct deep link: ${_appDeepLink(id)}
                     style: PLDesign.sectionTitle.copyWith(fontSize: 20)),
                 const SizedBox(height: 10),
                 Text(
-                  'Counsel gets read-only access to this case. Share the invite ID so they can sign in '
-                  'and accept from the app (same flow as other invites).',
+                  'Counsel gets read-only access to this case. Share the secure link—recipients tap once in Messages or email.',
                   style: PLDesign.caption.copyWith(height: 1.35),
                 ),
                 const SizedBox(height: 20),
-                if (_inviteId == null) ...[
+                if (_links == null) ...[
                   TextField(
                     controller: _recipientEmail,
                     keyboardType: TextInputType.emailAddress,
@@ -152,51 +187,38 @@ Direct deep link: ${_appDeepLink(id)}
                         : Text(context.tTone('generateInviteLink')),
                   ),
                 ] else ...[
-                  Text('Invite ID', style: PLDesign.caption),
+                  Text('Invite token', style: PLDesign.caption),
                   const SizedBox(height: 8),
                   SelectableText(
-                    _inviteId!,
+                    _links!.token,
                     style: PLDesign.body.copyWith(
                       fontWeight: FontWeight.w800,
                       letterSpacing: 0.5,
                     ),
                   ),
                   const SizedBox(height: 16),
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      await SharePlus.instance.share(
-                        ShareParams(text: _shareMessage(_inviteId!)),
-                      );
-                    },
-                    icon: const Icon(Icons.ios_share_rounded),
-                    label: const Text('Share Invite'),
-                  ),
-                  const SizedBox(height: 10),
-                  OutlinedButton.icon(
-                    onPressed: () async {
-                      await Clipboard.setData(
-                        ClipboardData(text: _shareMessage(_inviteId!)),
-                      );
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Invite message copied')),
-                      );
-                    },
-                    icon: const Icon(Icons.copy_rounded),
-                    label: const Text('Copy Invite Message'),
-                  ),
-                  const SizedBox(height: 10),
                   SelectableText(
-                    _inviteUrl(_inviteId!),
+                    _links!.universalLink,
                     style: PLDesign.caption.copyWith(
                       color: PLDesign.primary,
                       fontWeight: FontWeight.w700,
                     ),
                   ),
+                  const SizedBox(height: 16),
+                  OutlinedButton.icon(
+                    onPressed: _shareUniversalLink,
+                    icon: const Icon(Icons.ios_share_rounded),
+                    label: const Text('Share Invite'),
+                  ),
+                  const SizedBox(height: 10),
+                  OutlinedButton.icon(
+                    onPressed: _copyUniversalLink,
+                    icon: const Icon(Icons.copy_rounded),
+                    label: const Text('Copy Invite Message'),
+                  ),
                   const SizedBox(height: 10),
                   Text(
-                    'Ask your attorney to tap this link on mobile. The app will open to accept invite '
-                    'and link directly to your case account. Invite code remains a fallback.',
+                    'Ask your attorney to tap this link on mobile. ParentLedger opens directly to accept.',
                     style: PLDesign.caption.copyWith(
                       color: PLDesign.textMuted,
                       height: 1.35,

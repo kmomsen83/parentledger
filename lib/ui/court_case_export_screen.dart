@@ -4,9 +4,10 @@ import 'package:provider/provider.dart';
 import 'package:parentledger/design/design.dart';
 import 'package:parentledger/providers/case_context.dart';
 import 'package:parentledger/services/case_switcher_service.dart';
+import 'package:parentledger/services/counsel_access_policy.dart';
 import 'package:parentledger/services/legal_export_service.dart';
 import 'package:parentledger/ui/legal_export_preview_screen.dart';
-import 'package:parentledger/ui/widgets/parent_upgrade_prompt.dart';
+import 'package:parentledger/ui/widgets/premium_upgrade_sheet.dart';
 
 class CourtCaseExportScreen extends StatefulWidget {
 const CourtCaseExportScreen({super.key});
@@ -57,11 +58,9 @@ return;
 
 final session = context.read<CaseContext>();
 if (!session.isAttorney && !session.unlockedParentPremiumFeatures) {
-  await showParentUpgradePrompt(
+  await showPremiumUpgradeSheet(
     context,
-    title: 'Upgrade for court exports',
-    message:
-        'Full bundle exports and court-formatted reports are included with ParentLedger Pro.',
+    feature: DashboardPremiumFeature.complianceReports,
   );
   return;
 }
@@ -73,6 +72,21 @@ if (caseId == null || caseId.isEmpty) {
     const SnackBar(content: Text('No case selected. Open a case and try again.')),
   );
   return;
+}
+
+if (session.isAttorney) {
+  final wait = await CounselAccessPolicy.exportCooldownRemaining();
+  if (wait != null) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please wait a moment before exporting again.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+    return;
+  }
 }
 
 setState(() => isGenerating = true);
@@ -88,6 +102,10 @@ try {
     includeViolations: violations,
     includeAiNarrative: aiNarrative,
   );
+  if (!mounted) return;
+  if (session.isAttorney) {
+    await CounselAccessPolicy.recordExportCompleted();
+  }
   if (!mounted) return;
   final watermarked = session.isAttorney;
   await Navigator.push<void>(

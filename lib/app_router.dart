@@ -1,3 +1,5 @@
+import 'dart:developer' as developer;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -15,55 +17,76 @@ import 'ui/signup_screen.dart';
 import 'ui/paywall_screen.dart';
 import 'ui/terms_screen.dart';
 import 'ui/workspace_coparent_setup_screen.dart';
+import 'ui/enter_invite_code_screen.dart';
+import 'ui/onboarding/account_type_screen.dart';
+import 'ui/onboarding/attorney_onboarding_screen.dart';
 
-import 'services/invite_service.dart';
 import 'services/invite_link_service.dart';
+import 'services/invite_service.dart';
 
 /// Maps [CaseContext] + invite deep-link state to the correct screen.
 /// Does not subscribe to Firestore or RevenueCat; [CaseContext] owns that.
 class AppRouter extends StatefulWidget {
-  final String? inviteId;
-
-  const AppRouter({super.key, this.inviteId});
+  const AppRouter({super.key});
 
   @override
   State<AppRouter> createState() => _AppRouterState();
 }
 
 class _AppRouterState extends State<AppRouter> {
-  String? pendingInviteId;
-  String? pendingInviteToken;
+  String? _pendingInviteId;
+  String? _pendingInviteToken;
+  String? _pendingInviteCode;
+  /// Survives [CaseContext] rebuilds while the accept UI is on screen.
+  String? _activeInviteToken;
   VoidCallback? _inviteListener;
+
+  static void _routeLog(String message) {
+    developer.log(message, name: 'AppRouterInvite');
+  }
 
   @override
   void initState() {
     super.initState();
-    pendingInviteId = widget.inviteId;
-    if (widget.inviteId != null) {
-      InviteService.pendingInviteId = widget.inviteId;
+    _pendingInviteId = InviteLinkService.pendingInviteId.value;
+    _pendingInviteToken = InviteLinkService.pendingInviteToken.value;
+    _pendingInviteCode = InviteLinkService.pendingInviteCode.value;
+    if (_pendingInviteId != null) {
+      InviteService.pendingInviteId = _pendingInviteId;
     }
+    if (_pendingInviteToken != null) {
+      InviteService.pendingInviteToken = _pendingInviteToken;
+    }
+
     _inviteListener = () {
       final incomingToken = InviteLinkService.pendingInviteToken.value;
       if (incomingToken != null && incomingToken.isNotEmpty) {
         if (!mounted) return;
         setState(() {
-          pendingInviteToken = incomingToken;
+          _pendingInviteToken = incomingToken;
         });
         InviteService.pendingInviteToken = incomingToken;
-        InviteLinkService.consume();
+        return;
+      }
+      final incomingCode = InviteLinkService.pendingInviteCode.value;
+      if (incomingCode != null && incomingCode.isNotEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _pendingInviteCode = incomingCode;
+        });
         return;
       }
       final incoming = InviteLinkService.pendingInviteId.value;
       if (incoming == null || incoming.isEmpty) return;
       if (!mounted) return;
       setState(() {
-        pendingInviteId = incoming;
+        _pendingInviteId = incoming;
       });
       InviteService.pendingInviteId = incoming;
-      InviteLinkService.consume();
     };
     InviteLinkService.pendingInviteId.addListener(_inviteListener!);
     InviteLinkService.pendingInviteToken.addListener(_inviteListener!);
+    InviteLinkService.pendingInviteCode.addListener(_inviteListener!);
   }
 
   @override
@@ -71,8 +94,13 @@ class _AppRouterState extends State<AppRouter> {
     if (_inviteListener != null) {
       InviteLinkService.pendingInviteId.removeListener(_inviteListener!);
       InviteLinkService.pendingInviteToken.removeListener(_inviteListener!);
+      InviteLinkService.pendingInviteCode.removeListener(_inviteListener!);
     }
     super.dispose();
+  }
+
+  bool _needsAccountTypeSelection(String step) {
+    return step == OnboardingSteps.accountType || step == OnboardingSteps.roleSelection;
   }
 
   @override
@@ -83,36 +111,75 @@ class _AppRouterState extends State<AppRouter> {
       return const SessionLoadingGate();
     }
 
+    final hasPendingInvite = _pendingInviteToken != null ||
+        _pendingInviteCode != null ||
+        _pendingInviteId != null ||
+        InviteLinkService.pendingInviteToken.value != null ||
+        InviteLinkService.pendingInviteCode.value != null ||
+        InviteLinkService.pendingInviteId.value != null;
+
     if (!session.isSignedIn) {
-      return GuestOnboardingGate(inviteId: pendingInviteId);
+      return GuestOnboardingGate(hasPendingInvite: hasPendingInvite);
     }
 
     final step = session.onboardingStep;
     final userDocExists = session.userDocExists;
 
-    if (pendingInviteId != null) {
-      final id = pendingInviteId!;
-      pendingInviteId = null;
-      return AcceptInviteScreen(inviteId: id);
+    if (_activeInviteToken == null &&
+        (_pendingInviteToken != null ||
+            InviteLinkService.pendingInviteToken.value != null)) {
+      final t = _pendingInviteToken ?? InviteLinkService.pendingInviteToken.value;
+      if (t != null && t.isNotEmpty) {
+        _pendingInviteToken = null;
+        InviteLinkService.takePendingInviteToken();
+        _activeInviteToken = t;
+      }
     }
-    final incomingToken = InviteLinkService.pendingInviteToken.value;
-    if (incomingToken != null && incomingToken.isNotEmpty) {
-      pendingInviteToken = incomingToken;
-      InviteService.pendingInviteToken = incomingToken;
-      InviteLinkService.consume();
+    if (_activeInviteToken != null && _activeInviteToken!.isNotEmpty) {
+      _routeLog('route → AcceptInviteTokenScreen (token)');
+      return AcceptInviteTokenScreen(
+        token: _activeInviteToken!,
+        onFlowFinished: () {
+          if (mounted) {
+            setState(() => _activeInviteToken = null);
+          }
+        },
+      );
     }
-    if (pendingInviteToken != null) {
-      final token = pendingInviteToken!;
-      pendingInviteToken = null;
-      return AcceptInviteTokenScreen(token: token);
+    final pendingCode =
+        _pendingInviteCode ?? InviteLinkService.pendingInviteCode.value;
+    if (pendingCode != null && pendingCode.isNotEmpty) {
+      _pendingInviteCode = null;
+      InviteLinkService.takePendingInviteCode();
+      _routeLog('route → EnterInviteCodeScreen (shortCode)');
+      return EnterInviteCodeScreen(
+        initialCode: pendingCode,
+        promptConfirmFromDeepLink: true,
+      );
+    }
+    final pendingLegacyId =
+        _pendingInviteId ?? InviteLinkService.pendingInviteId.value;
+    if (pendingLegacyId != null && pendingLegacyId.isNotEmpty) {
+      _pendingInviteId = null;
+      InviteLinkService.takePendingInviteId();
+      _routeLog('route → AcceptInviteScreen (inviteId)');
+      return AcceptInviteScreen(inviteId: pendingLegacyId);
     }
 
-    // Attorney (counsel) portal — read-only case tools; not the parent onboarding flow.
+    // --- Account type (Parent vs Attorney) — must run before counsel dashboard ---
+    if (_needsAccountTypeSelection(step)) {
+      return const AccountTypeScreen();
+    }
+
+    // --- Attorney path (never parent custody / children setup) ---
     if (session.isAttorney) {
+      if (step == OnboardingSteps.attorneyProfile) {
+        return const AttorneyOnboardingScreen();
+      }
       return const AttorneyDashboardScreen();
     }
 
-    // Order: invite context (invitee) → create account → terms → co-parent → children → paywall → dashboard.
+    // --- Parent path ---
     switch (step) {
       case OnboardingSteps.inviteContext:
         return const InviteContextScreen();

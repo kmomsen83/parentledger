@@ -1,59 +1,165 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Open ParentLedger Invite</title>
+  <title>ParentLedger invite</title>
   <style>
-    body { font-family: Arial, sans-serif; max-width: 680px; margin: 0 auto; padding: 24px; line-height: 1.45; }
-    .card { border: 1px solid #ddd; border-radius: 12px; padding: 18px; margin-top: 18px; }
-    .btn { display: inline-block; padding: 10px 14px; border-radius: 8px; background: #2f63f6; color: #fff; text-decoration: none; margin-right: 8px; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: #070b14;
+      color: #e5e9f5;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+    .card {
+      max-width: 560px;
+      width: 100%;
+      padding: 24px;
+      border-radius: 18px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.1);
+      line-height: 1.55;
+      text-align: center;
+    }
+    .btn {
+      display: inline-block;
+      padding: 12px 18px;
+      border-radius: 12px;
+      background: linear-gradient(120deg,#76c3ff,#3d7cff);
+      color: #fff;
+      text-decoration: none;
+      margin: 6px;
+      font-weight: 650;
+      font-size: 15px;
+      border: none;
+      cursor: pointer;
+    }
+    .btn.secondary {
+      background: rgba(255,255,255,0.1);
+      color: #e5e9f5;
+    }
+    p { opacity: .88; margin: 10px 0; }
+    h1 { font-size: 22px; margin: 0 0 8px; letter-spacing: 0.02em; }
   </style>
 </head>
 <body>
-  <h1>Opening your ParentLedger invite...</h1>
   <div class="card">
-    <p id="status">Preparing secure invite handoff.</p>
-    <a id="openApp" class="btn" href="#">Open in App</a>
-    <a id="openStore" class="btn" href="#">Install App</a>
+    <h1>Opening ParentLedger…</h1>
+    <p id="status">Connecting your invite securely.</p>
+    <p>
+      <a id="openApp" class="btn" href="#">Open in ParentLedger</a><br/>
+      <a id="openStore" class="btn secondary" href="#">Install ParentLedger</a>
+    </p>
+    <p id="hint" style="font-size:13px;opacity:.65;"></p>
   </div>
   <script>
     (function () {
-      const params = new URLSearchParams(window.location.search);
-      const inviteId = (params.get('id') || params.get('inviteId') || '').trim();
-      const status = document.getElementById('status');
-      const openApp = document.getElementById('openApp');
-      const openStore = document.getElementById('openStore');
+      var TOKEN_RE = /^[a-zA-Z0-9_-]{8,128}$/;
+      var pathParts = window.location.pathname.split('/').filter(Boolean);
 
-      if (!inviteId) {
-        status.textContent = 'Invite link is invalid or missing.';
-        openApp.style.display = 'none';
-        return;
+      function resolveAppLink(parts) {
+        var attIx = parts.indexOf('attorney');
+        if (attIx >= 0 && parts[attIx + 1]) {
+          var atok = parts[attIx + 1].trim();
+          if (!TOKEN_RE.test(atok)) return null;
+          return {
+            url:
+              'parentledger://invite/attorney/' +
+              encodeURIComponent(atok),
+            label: 'attorney',
+          };
+        }
+        var copIx = parts.indexOf('coparent');
+        if (copIx >= 0 && parts[copIx + 1]) {
+          var ctok = parts[copIx + 1].trim();
+          if (!TOKEN_RE.test(ctok)) return null;
+          return {
+            url:
+              'parentledger://invite/coparent/' +
+              encodeURIComponent(ctok),
+            label: 'coparent_legacy',
+          };
+        }
+        var invIx = parts.indexOf('invite');
+        if (invIx >= 0 && parts[invIx + 1]) {
+          var seg = parts[invIx + 1];
+          if (seg === 'attorney' || seg === 'coparent') return null;
+          var ftok = decodeURIComponent(seg).trim();
+          if (!TOKEN_RE.test(ftok)) return null;
+          return {
+            url: 'parentledger://invite/' + encodeURIComponent(ftok),
+            label: 'invite_flat',
+          };
+        }
+        return null;
       }
 
-      localStorage.setItem('parentledger_pending_invite_id', inviteId);
-      const appLink = `parentledger://invite?id=${encodeURIComponent(inviteId)}`;
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-      const storeLink = isIOS
+      var resolved = resolveAppLink(pathParts);
+
+      var status = document.getElementById('status');
+      var openApp = document.getElementById('openApp');
+      var openStore = document.getElementById('openStore');
+      var hint = document.getElementById('hint');
+
+      var isIOS =
+        /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+      var storeLink = isIOS
         ? 'https://apps.apple.com/us/search?term=ParentLedger'
         : 'https://play.google.com/store/apps/details?id=com.parentledger.app';
 
-      openApp.href = appLink;
       openStore.href = storeLink;
 
-      status.textContent = 'Trying to open the app. If it does not open, install ParentLedger and then re-open this invite.';
+      if (!resolved) {
+        status.textContent =
+          'Invite link incomplete. Ask your contact to resend their ParentLedger invite.';
+        openApp.style.display = 'none';
+        hint.textContent = '';
+        return;
+      }
 
-      const started = Date.now();
+      var appLink = resolved.url;
+      openApp.href = appLink;
+
+      if (resolved.label === 'attorney') {
+        status.textContent =
+          'Trying to open the ParentLedger app with your attorney invite.';
+      } else {
+        status.textContent =
+          'Trying to open the ParentLedger app with your secure invite.';
+      }
+
+      hint.textContent =
+        'If ParentLedger is installed, it should open automatically. Otherwise tap Open in ParentLedger, or install from the store and return to this link.';
+
+      var launched = false;
+      window.addEventListener('pagehide', function () {
+        launched = true;
+      });
+      window.addEventListener('blur', function () {
+        launched = true;
+      });
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'hidden') launched = true;
+      });
+
       window.location.href = appLink;
 
-      setTimeout(() => {
-        const elapsed = Date.now() - started;
-        if (elapsed < 2500) {
-          window.location.href = storeLink;
+      setTimeout(function () {
+        if (launched || document.visibilityState === 'hidden') {
+          hint.textContent =
+            'If the app did not open, tap “Open in ParentLedger” above.';
+          return;
         }
-      }, 1300);
+        hint.textContent =
+          'No app yet? Install ParentLedger from the store, then open this invite again from your message.';
+      }, 2400);
     })();
   </script>
 </body>
 </html>
-

@@ -10,6 +10,7 @@ import '../models/case_event.dart';
 import '../models/timeline_event_model.dart';
 import '../providers/case_context.dart';
 import '../services/case_event_service.dart';
+import '../services/case_timeline_service.dart';
 import '../services/export_service.dart';
 import '../services/timeline_actor_resolver.dart';
 import '../services/timeline_integrity_service.dart';
@@ -19,6 +20,8 @@ import '../timeline/timeline_mapper.dart';
 import '../timeline/timeline_presentation.dart';
 import '../util/subscription_limits.dart';
 import '../util/subscription_gate.dart';
+import 'check_in/check_in_detail_screen.dart';
+import 'check_in/check_in_timeline_preview.dart';
 import 'widgets/attorney_case_switcher.dart';
 import 'package:provider/provider.dart';
 
@@ -29,10 +32,13 @@ class CaseUnifiedTimelineScreen extends StatefulWidget {
     required this.caseId,
     /// When set, only events whose local timestamp falls on this calendar day.
     this.filterToDay,
+    /// Nested under counsel [ClientCaseScreen] tabs (no duplicate app bar).
+    this.embedInParent = false,
   });
 
   final String caseId;
   final DateTime? filterToDay;
+  final bool embedInParent;
 
   @override
   State<CaseUnifiedTimelineScreen> createState() =>
@@ -42,6 +48,7 @@ class CaseUnifiedTimelineScreen extends StatefulWidget {
 class _CaseUnifiedTimelineScreenState extends State<CaseUnifiedTimelineScreen> {
   bool _selectMode = false;
   final Set<String> _selectedIds = <String>{};
+  final Set<String> _evidenceActionBusy = <String>{};
 
   /// One timeline pipeline per screen — [build] calls must not allocate new streams (scroll).
   late final Stream<List<TimelineEventModel>> _timelineModelsStream;
@@ -51,6 +58,36 @@ class _CaseUnifiedTimelineScreenState extends State<CaseUnifiedTimelineScreen> {
     super.initState();
     _timelineModelsStream =
         CaseEventService.watchTimelineModels(widget.caseId);
+  }
+
+  Future<void> _setEvidence(String eventId, bool isEvidence) async {
+    setState(() => _evidenceActionBusy.add(eventId));
+    try {
+      await CaseTimelineService.setEvidenceFlag(
+        caseId: widget.caseId,
+        eventId: eventId,
+        isEvidence: isEvidence,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isEvidence ? 'Marked as evidence' : 'Evidence mark removed',
+          ),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not update evidence: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _evidenceActionBusy.remove(eventId));
+      }
+    }
   }
 
   static IconData _iconForCategory(TimelineDisplayCategory c) {
@@ -136,43 +173,48 @@ class _CaseUnifiedTimelineScreenState extends State<CaseUnifiedTimelineScreen> {
   Widget build(BuildContext context) {
     final dayHeaderFmt = DateFormat('MMM d, yyyy');
 
+    final appBar = widget.embedInParent
+        ? null
+        : AppBar(
+            title: Text(
+              widget.filterToDay != null
+                  ? '${context.tTone('caseTimeline')} · ${DateFormat.yMMMd().format(widget.filterToDay!)}'
+                  : context.tTone('caseTimeline'),
+            ),
+            backgroundColor: PLDesign.surface,
+            foregroundColor: PLDesign.textPrimary,
+            elevation: 0,
+            actions: [
+              const AttorneyCaseSwitcher(),
+              if (!_selectMode)
+                IconButton(
+                  tooltip: 'Export PDF',
+                  icon: const Icon(Icons.picture_as_pdf_outlined),
+                  onPressed: _exportFullTimelinePdf,
+                ),
+              if (_selectMode)
+                IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: () => setState(() {
+                    _selectMode = false;
+                    _selectedIds.clear();
+                  }),
+                )
+              else
+                IconButton(
+                  icon: const Icon(Icons.checklist),
+                  onPressed: () => setState(() {
+                    _selectMode = true;
+                    _selectedIds.clear();
+                  }),
+                ),
+            ],
+          );
+
     return Scaffold(
+      primary: !widget.embedInParent,
       backgroundColor: PLDesign.background,
-      appBar: AppBar(
-        title: Text(
-          widget.filterToDay != null
-              ? '${context.tTone('caseTimeline')} · ${DateFormat.yMMMd().format(widget.filterToDay!)}'
-              : context.tTone('caseTimeline'),
-        ),
-        backgroundColor: PLDesign.surface,
-        foregroundColor: PLDesign.textPrimary,
-        elevation: 0,
-        actions: [
-          const AttorneyCaseSwitcher(),
-          if (!_selectMode)
-            IconButton(
-              tooltip: 'Export PDF',
-              icon: const Icon(Icons.picture_as_pdf_outlined),
-              onPressed: _exportFullTimelinePdf,
-            ),
-          if (_selectMode)
-            IconButton(
-              icon: const Icon(Icons.close),
-              onPressed: () => setState(() {
-                _selectMode = false;
-                _selectedIds.clear();
-              }),
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.checklist),
-              onPressed: () => setState(() {
-                _selectMode = true;
-                _selectedIds.clear();
-              }),
-            ),
-        ],
-      ),
+      appBar: appBar,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -407,6 +449,16 @@ class _CaseUnifiedTimelineScreenState extends State<CaseUnifiedTimelineScreen> {
                                 flagLine: flagText.isNotEmpty ? flagText : null,
                                 selected: isSelected,
                                 selectMode: _selectMode,
+                                isEvidence: ev.isEvidence,
+                                evidenceBusy:
+                                    _evidenceActionBusy.contains(ev.id),
+                                onEvidenceTap: _selectMode
+                                    ? null
+                                    : () =>
+                                        _setEvidence(ev.id, !ev.isEvidence),
+                                checkInPreview: rawType == 'check_in'
+                                    ? CheckInTimelinePreview(metadata: metaMap)
+                                    : null,
                               );
 
                               final isLast = i == dayDocs.length - 1;
@@ -424,7 +476,19 @@ class _CaseUnifiedTimelineScreenState extends State<CaseUnifiedTimelineScreen> {
                                           }
                                         });
                                       }
-                                    : null,
+                                    : rawType == 'check_in'
+                                        ? () {
+                                            Navigator.of(context).push(
+                                              MaterialPageRoute<void>(
+                                                builder: (_) =>
+                                                    CheckInDetailScreen(
+                                                  caseId: widget.caseId,
+                                                  event: ev,
+                                                ),
+                                              ),
+                                            );
+                                          }
+                                        : null,
                                 child: Padding(
                                   padding: const EdgeInsets.only(bottom: 4),
                                   child: Column(
@@ -471,12 +535,23 @@ class _CaseUnifiedTimelineScreenState extends State<CaseUnifiedTimelineScreen> {
                             ? null
                             : () async {
                                 for (final id in _selectedIds) {
-                                  await CaseEventService.mergeAnnotationTag(
+                                  await CaseTimelineService.setEvidenceFlag(
                                     caseId: widget.caseId,
                                     eventId: id,
-                                    tag: 'evidence',
+                                    isEvidence: true,
                                   );
                                 }
+                                if (!mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      _selectedIds.length == 1
+                                          ? 'Marked as evidence'
+                                          : '${_selectedIds.length} items marked as evidence',
+                                    ),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
                               },
                         child: const Text('Mark as Evidence'),
                       ),
@@ -567,9 +642,10 @@ class _CaseUnifiedTimelineScreenState extends State<CaseUnifiedTimelineScreen> {
                                         : null,
                                     tags: List<String>.from(
                                         metaMap['tags'] ?? const []),
-                                    evidence: List<String>.from(
-                                            metaMap['tags'] ?? const [])
-                                        .contains('evidence'),
+                                    evidence: metaMap['isEvidence'] == true ||
+                                        List<String>.from(
+                                                metaMap['tags'] ?? const [])
+                                            .contains('evidence'),
                                   );
                                 }).toList();
                                 final csv = ExportService.buildCsv(rows);
@@ -700,7 +776,13 @@ class _TimelineEventCard extends StatelessWidget {
     this.flagLine,
     this.selected = false,
     this.selectMode = false,
+    this.isEvidence = false,
+    this.evidenceBusy = false,
+    this.onEvidenceTap,
+    this.checkInPreview,
   });
+
+  static const Color _evidenceAccent = Color(0xFFC9A227);
 
   final String timeText;
   final TimelineDisplayCategory category;
@@ -722,6 +804,10 @@ class _TimelineEventCard extends StatelessWidget {
   final String? flagLine;
   final bool selected;
   final bool selectMode;
+  final bool isEvidence;
+  final bool evidenceBusy;
+  final VoidCallback? onEvidenceTap;
+  final Widget? checkInPreview;
 
   @override
   Widget build(BuildContext context) {
@@ -740,14 +826,25 @@ class _TimelineEventCard extends StatelessWidget {
         break;
     }
 
-    return Container(
+    if (isEvidence) {
+      bg = Color.lerp(bg, _evidenceAccent, 0.11) ?? bg;
+      border = _evidenceAccent.withValues(alpha: 0.88);
+    }
+
+    final borderColor = selected ? PLDesign.primary : border;
+    final double borderWidth =
+        selected ? 1.8 : (severity == TimelineSeverity.subtle ? 1.0 : 1.4);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: selected ? PLDesign.primary : border,
-          width: selected ? 1.8 : (severity == TimelineSeverity.subtle ? 1 : 1.4),
+          color: borderColor,
+          width: borderWidth,
         ),
         boxShadow: PLDesign.softShadow,
       ),
@@ -766,6 +863,14 @@ class _TimelineEventCard extends StatelessWidget {
                   color: PLDesign.textPrimary,
                 ),
               ),
+              if (isEvidence) ...[
+                const SizedBox(width: 8),
+                Icon(
+                  Icons.verified_rounded,
+                  size: 20,
+                  color: _evidenceAccent.withValues(alpha: 0.95),
+                ),
+              ],
               if (classification != null) ...[
                 const SizedBox(width: 10),
                 Container(
@@ -804,6 +909,10 @@ class _TimelineEventCard extends StatelessWidget {
                 height: 1.35,
               ),
             ),
+          ],
+          if (checkInPreview != null) ...[
+            const SizedBox(height: 14),
+            checkInPreview!,
           ],
           const SizedBox(height: 8),
           Text(
@@ -862,6 +971,42 @@ class _TimelineEventCard extends StatelessWidget {
               child: Icon(
                 selected ? Icons.check_circle : Icons.radio_button_unchecked,
                 color: selected ? PLDesign.primary : PLDesign.textMuted,
+              ),
+            ),
+          ],
+          if (!selectMode && onEvidenceTap != null) ...[
+            const SizedBox(height: 14),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: evidenceBusy ? null : onEvidenceTap,
+                icon: evidenceBusy
+                    ? SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: isEvidence
+                              ? PLDesign.success
+                              : PLDesign.primary,
+                        ),
+                      )
+                    : Icon(
+                        isEvidence
+                            ? Icons.check_circle_outline_rounded
+                            : Icons.label_outline_rounded,
+                        size: 18,
+                        color: isEvidence
+                            ? PLDesign.success
+                            : PLDesign.primary,
+                      ),
+                label: Text(
+                  isEvidence ? 'Marked as Evidence' : 'Mark as Evidence',
+                  style: PLDesign.caption.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: isEvidence ? PLDesign.success : PLDesign.primary,
+                  ),
+                ),
               ),
             ),
           ],

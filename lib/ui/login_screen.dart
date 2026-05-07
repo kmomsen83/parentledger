@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+
+import '../services/invite_link_service.dart';
 import 'enter_invite_code_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -178,8 +180,10 @@ class _LoginScreenState extends State<LoginScreen> {
                               : () {
                                   Navigator.of(context).push(
                                     MaterialPageRoute(
-                                      builder: (_) =>
-                                          const EnterInviteCodeScreen(),
+                                      builder: (_) => EnterInviteCodeScreen(
+                                        initialCode: InviteLinkService
+                                            .pendingInviteCode.value,
+                                      ),
                                     ),
                                   );
                                 },

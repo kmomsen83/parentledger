@@ -4400,6 +4400,204 @@ abstract class AppLocalizations {
   /// **'Here\'s your case at a glance'**
   String get dashboardCaseSubtitle_legal;
 
+  /// No description provided for @dashboardPremiumHeadline_neutral.
+  ///
+  /// In en, this message translates to:
+  /// **'Everything documented. No more arguments.'**
+  String get dashboardPremiumHeadline_neutral;
+
+  /// No description provided for @dashboardPremiumHeadline_professional.
+  ///
+  /// In en, this message translates to:
+  /// **'Everything documented. No more arguments.'**
+  String get dashboardPremiumHeadline_professional;
+
+  /// No description provided for @dashboardPremiumHeadline_legal.
+  ///
+  /// In en, this message translates to:
+  /// **'Everything documented. No more arguments.'**
+  String get dashboardPremiumHeadline_legal;
+
+  /// No description provided for @dashboardPremiumTagline_neutral.
+  ///
+  /// In en, this message translates to:
+  /// **'Track expenses, messages, and custody schedules in one place.'**
+  String get dashboardPremiumTagline_neutral;
+
+  /// No description provided for @dashboardPremiumTagline_professional.
+  ///
+  /// In en, this message translates to:
+  /// **'Track expenses, messages, and custody schedules in one place.'**
+  String get dashboardPremiumTagline_professional;
+
+  /// No description provided for @dashboardPremiumTagline_legal.
+  ///
+  /// In en, this message translates to:
+  /// **'Track expenses, messages, and custody schedules in one place.'**
+  String get dashboardPremiumTagline_legal;
+
+  /// No description provided for @messagesCardTitle_neutral.
+  ///
+  /// In en, this message translates to:
+  /// **'Messages'**
+  String get messagesCardTitle_neutral;
+
+  /// No description provided for @messagesCardTitle_professional.
+  ///
+  /// In en, this message translates to:
+  /// **'Messages'**
+  String get messagesCardTitle_professional;
+
+  /// No description provided for @messagesCardTitle_legal.
+  ///
+  /// In en, this message translates to:
+  /// **'Messages'**
+  String get messagesCardTitle_legal;
+
+  /// No description provided for @messagesPreviewLoading_neutral.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading recent messages…'**
+  String get messagesPreviewLoading_neutral;
+
+  /// No description provided for @messagesPreviewLoading_professional.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading recent messages…'**
+  String get messagesPreviewLoading_professional;
+
+  /// No description provided for @messagesPreviewLoading_legal.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading recent messages…'**
+  String get messagesPreviewLoading_legal;
+
+  /// No description provided for @messagesPreviewEmpty_neutral.
+  ///
+  /// In en, this message translates to:
+  /// **'No recent messages'**
+  String get messagesPreviewEmpty_neutral;
+
+  /// No description provided for @messagesPreviewEmpty_professional.
+  ///
+  /// In en, this message translates to:
+  /// **'No recent messages'**
+  String get messagesPreviewEmpty_professional;
+
+  /// No description provided for @messagesPreviewEmpty_legal.
+  ///
+  /// In en, this message translates to:
+  /// **'No recent messages'**
+  String get messagesPreviewEmpty_legal;
+
+  /// No description provided for @messagesUnreadNone_neutral.
+  ///
+  /// In en, this message translates to:
+  /// **'No unread messages'**
+  String get messagesUnreadNone_neutral;
+
+  /// No description provided for @messagesUnreadNone_professional.
+  ///
+  /// In en, this message translates to:
+  /// **'No unread messages'**
+  String get messagesUnreadNone_professional;
+
+  /// No description provided for @messagesUnreadNone_legal.
+  ///
+  /// In en, this message translates to:
+  /// **'No unread messages'**
+  String get messagesUnreadNone_legal;
+
+  /// No description provided for @messagesUnreadOne_neutral.
+  ///
+  /// In en, this message translates to:
+  /// **'1 unread message'**
+  String get messagesUnreadOne_neutral;
+
+  /// No description provided for @messagesUnreadOne_professional.
+  ///
+  /// In en, this message translates to:
+  /// **'1 unread message'**
+  String get messagesUnreadOne_professional;
+
+  /// No description provided for @messagesUnreadOne_legal.
+  ///
+  /// In en, this message translates to:
+  /// **'1 unread message'**
+  String get messagesUnreadOne_legal;
+
+  /// No description provided for @messagesUnreadMany_neutral.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} unread messages'**
+  String messagesUnreadMany_neutral(int count);
+
+  /// No description provided for @messagesUnreadMany_professional.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} unread messages'**
+  String messagesUnreadMany_professional(int count);
+
+  /// No description provided for @messagesUnreadMany_legal.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} unread messages'**
+  String messagesUnreadMany_legal(int count);
+
+  /// No description provided for @balanceCardSecurePill_neutral.
+  ///
+  /// In en, this message translates to:
+  /// **'All activity is securely documented'**
+  String get balanceCardSecurePill_neutral;
+
+  /// No description provided for @balanceCardSecurePill_professional.
+  ///
+  /// In en, this message translates to:
+  /// **'All activity is securely documented'**
+  String get balanceCardSecurePill_professional;
+
+  /// No description provided for @balanceCardSecurePill_legal.
+  ///
+  /// In en, this message translates to:
+  /// **'All activity is securely documented'**
+  String get balanceCardSecurePill_legal;
+
+  /// No description provided for @dashboardTrustBannerPrimary_neutral.
+  ///
+  /// In en, this message translates to:
+  /// **'Every expense and message is recorded.'**
+  String get dashboardTrustBannerPrimary_neutral;
+
+  /// No description provided for @dashboardTrustBannerPrimary_professional.
+  ///
+  /// In en, this message translates to:
+  /// **'Every expense and message is recorded.'**
+  String get dashboardTrustBannerPrimary_professional;
+
+  /// No description provided for @dashboardTrustBannerPrimary_legal.
+  ///
+  /// In en, this message translates to:
+  /// **'Every expense and message is recorded.'**
+  String get dashboardTrustBannerPrimary_legal;
+
+  /// No description provided for @dashboardTrustBannerSecondary_neutral.
+  ///
+  /// In en, this message translates to:
+  /// **'Export records anytime for court or mediation.'**
+  String get dashboardTrustBannerSecondary_neutral;
+
+  /// No description provided for @dashboardTrustBannerSecondary_professional.
+  ///
+  /// In en, this message translates to:
+  /// **'Export records anytime for court or mediation.'**
+  String get dashboardTrustBannerSecondary_professional;
+
+  /// No description provided for @dashboardTrustBannerSecondary_legal.
+  ///
+  /// In en, this message translates to:
+  /// **'Export records anytime for court or mediation.'**
+  String get dashboardTrustBannerSecondary_legal;
+
   /// No description provided for @addExpense_neutral.
   ///
   /// In en, this message translates to:
@@ -4453,6 +4651,24 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Request reimbursement'**
   String get requestReimbursement_legal;
+
+  /// No description provided for @requestPayment_neutral.
+  ///
+  /// In en, this message translates to:
+  /// **'Request Payment'**
+  String get requestPayment_neutral;
+
+  /// No description provided for @requestPayment_professional.
+  ///
+  /// In en, this message translates to:
+  /// **'Request Payment'**
+  String get requestPayment_professional;
+
+  /// No description provided for @requestPayment_legal.
+  ///
+  /// In en, this message translates to:
+  /// **'Request Payment'**
+  String get requestPayment_legal;
 
   /// No description provided for @noMessages_neutral.
   ///
@@ -6833,37 +7049,37 @@ abstract class AppLocalizations {
   /// No description provided for @mom_neutral.
   ///
   /// In en, this message translates to:
-  /// **'Mom'**
+  /// **'Mother'**
   String get mom_neutral;
 
   /// No description provided for @mom_professional.
   ///
   /// In en, this message translates to:
-  /// **'Mom'**
+  /// **'Mother'**
   String get mom_professional;
 
   /// No description provided for @mom_legal.
   ///
   /// In en, this message translates to:
-  /// **'Mom'**
+  /// **'Mother'**
   String get mom_legal;
 
   /// No description provided for @dad_neutral.
   ///
   /// In en, this message translates to:
-  /// **'Dad'**
+  /// **'Father'**
   String get dad_neutral;
 
   /// No description provided for @dad_professional.
   ///
   /// In en, this message translates to:
-  /// **'Dad'**
+  /// **'Father'**
   String get dad_professional;
 
   /// No description provided for @dad_legal.
   ///
   /// In en, this message translates to:
-  /// **'Dad'**
+  /// **'Father'**
   String get dad_legal;
 
   /// No description provided for @guardian_neutral.
@@ -7211,19 +7427,19 @@ abstract class AppLocalizations {
   /// No description provided for @balanceUpdatedTodayIntro_neutral.
   ///
   /// In en, this message translates to:
-  /// **'Updated today ·'**
+  /// **'Updated today •'**
   String get balanceUpdatedTodayIntro_neutral;
 
   /// No description provided for @balanceUpdatedTodayIntro_professional.
   ///
   /// In en, this message translates to:
-  /// **'Updated today ·'**
+  /// **'Updated today •'**
   String get balanceUpdatedTodayIntro_professional;
 
   /// No description provided for @balanceUpdatedTodayIntro_legal.
   ///
   /// In en, this message translates to:
-  /// **'Updated today ·'**
+  /// **'Updated today •'**
   String get balanceUpdatedTodayIntro_legal;
 
   /// No description provided for @completeWorkspaceSetupToTrackBalances_neutral.

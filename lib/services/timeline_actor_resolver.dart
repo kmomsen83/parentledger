@@ -32,6 +32,11 @@ class TimelineActor {
     final role = UserRole.fromObject(d?['role']);
     if (role == UserRole.attorney) return 'Attorney';
 
+    final pt = (d?['parentType'] ?? '').toString().toLowerCase().trim();
+    if (pt == 'mom') return 'Mother';
+    if (pt == 'dad') return 'Father';
+    if (pt == 'guardian') return 'Guardian';
+
     final g = (d?['gender'] ?? '').toString().toLowerCase().trim();
     if (g == 'male' || g == 'm') return 'Father';
     if (g == 'female' || g == 'f') return 'Mother';
