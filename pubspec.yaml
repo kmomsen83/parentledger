@@ -2,7 +2,7 @@ name: parentledger
 description: Premium Co-Parent Communication Platform
 publish_to: 'none'
 
-version: 1.0.1+17
+version: 1.0.0+1
 
 environment:
   sdk: ">=3.3.0 <4.0.0"
@@ -11,82 +11,63 @@ dependencies:
   flutter:
     sdk: flutter
   http: ^1.6.0  
-  pdf: ^3.12.0
+  pdf: 3.10.4
   path_provider: ^2.1.2
-  intl_phone_field: ^3.2.0
-  country_codes: ^3.0.0
-  flutter_multi_formatter: ^2.11.0
-  intl_phone_number_input: ^0.7.4
-  phone_numbers_parser: ^9.0.21
-
-  flutter_localizations:
-    sdk: flutter
 
   # STATE
   provider: ^6.1.2
 
   # FIREBASE
-  firebase_core: ^4.7.0
-  firebase_auth: ^6.4.0
-  cloud_firestore: ^6.3.0
-  firebase_storage: ^13.3.0
-  firebase_analytics: ^12.3.0
-  firebase_crashlytics: ^5.0.6
-  firebase_app_check: ^0.4.3
-  cloud_functions: ^6.2.0
+  firebase_core: ^3.1.0
+  firebase_auth: ^5.1.0
+  cloud_firestore: ^5.0.0
+  firebase_storage: ^12.0.0
+  firebase_analytics: ^11.0.0
+  cloud_functions: ^5.0.1
+  firebase_app_check: ^0.3.0
+
+
+  flutter_stripe: ^10.1.0
 
   # UI PREMIUM
   flutter_animate: ^4.5.0
   flutter_svg: ^2.2.4
-  google_fonts: ^8.0.2
+  google_fonts: ^6.2.1
   image_picker: ^1.0.7
   sms_autofill: ^2.3.0
-  image_cropper: ^12.2.1
-  cached_network_image: ^3.4.1
-  fl_chart: ^1.2.0
-  printing: ^5.14.3
-  flutter_pdfview: ^1.4.4
+  image_cropper: ^7.0.5
+  fl_chart: ^0.68.0
+  printing: ^5.12.0
 
   # NAVIGATION
-  go_router: ^17.2.1
-  geolocator: ^14.0.2
-  google_maps_flutter: ^2.6.0
+  go_router: ^14.0.0
+  geolocator: ^11.0.0
+  google_maps_flutter: ^2.5.0
   url_launcher: ^6.3.0
+  google_places_flutter: ^2.0.7
   crypto: ^3.0.3
-  geocoding: ^4.0.0
+  geocoding: ^2.1.1
 
   # UTIL
-  intl: ^0.20.2
-  table_calendar: ^3.1.3
+  intl: ^0.19.0
   uuid: ^4.4.0
-  shared_preferences: ^2.5.3
 
   cupertino_icons: ^1.0.6
-  purchases_flutter: ^10.0.1
-  purchases_ui_flutter: ^10.0.1
+  purchases_flutter: ^8.11.0
+  purchases_ui_flutter: ^8.11.0
   in_app_purchase: ^3.1.11
-  permission_handler: ^12.0.1
-  file_picker: ^11.0.2
-  flutter_contacts: ^2.0.2
-  speech_to_text: ^7.3.0
-  flutter_markdown_plus: ^1.0.7
-  app_links: ^6.4.0
-  package_info_plus: ^9.0.1
-  share_plus: ^12.0.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
 
-  flutter_lints: ^6.0.0
+  flutter_lints: ^4.0.0
 
 flutter:
   uses-material-design: true
-  generate: true
 
   assets:
     - lib/assets/emblem.svg
     - lib/design/splash_screen_background.png
     - lib/design/premium_entry_screen_background.png
     - lib/assets/parentledger_logo.svg
-    - assets/legal/terms_of_service.md
