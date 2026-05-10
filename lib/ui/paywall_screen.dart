@@ -131,9 +131,9 @@ class _PaywallScreenState extends State<PaywallScreen> {
     setState(() => _busy = true);
 
     try {
-      final result = await Purchases.purchase(PurchaseParams.package(selected));
-      var active = result.customerInfo.entitlements.active
-          .containsKey(kRevenueCatEntitlementId);
+      final info = await Purchases.purchasePackage(selected);
+      var active =
+          info.entitlements.active.containsKey(kRevenueCatEntitlementId);
       if (!active) {
         active = await RevenueCatService.hasProEntitlement();
       }

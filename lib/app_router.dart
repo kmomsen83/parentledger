@@ -23,6 +23,7 @@ import 'ui/onboarding/attorney_onboarding_screen.dart';
 
 import 'services/invite_link_service.dart';
 import 'services/invite_service.dart';
+import 'startup_diag.dart';
 
 /// Maps [CaseContext] + invite deep-link state to the correct screen.
 /// Does not subscribe to Firestore or RevenueCat; [CaseContext] owns that.
@@ -108,8 +109,21 @@ class _AppRouterState extends State<AppRouter> {
     final session = context.watch<CaseContext>();
 
     if (!session.sessionReadyForRouter) {
+      startupDiag(
+        'AppRouter.build',
+        'BLOCKED → SessionLoadingGate '
+        '(authInitializing=${session.authInitializing}, '
+        'signedIn=${session.isSignedIn}, '
+        'userDocLoading=${session.userDocLoading}, '
+        'premiumLoading=${session.premiumLoading})',
+      );
       return const SessionLoadingGate();
     }
+
+    startupDiag(
+      'AppRouter.build',
+      'route branch signedIn=${session.isSignedIn}',
+    );
 
     final hasPendingInvite = _pendingInviteToken != null ||
         _pendingInviteCode != null ||

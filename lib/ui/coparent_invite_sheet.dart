@@ -92,7 +92,7 @@ class _CoparentInviteSheetState extends State<_CoparentInviteSheet> {
       inviterFirstName: name,
       invite: r,
     );
-    await SharePlus.instance.share(ShareParams(text: body));
+    await Share.share(body);
   }
 
   @override

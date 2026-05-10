@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:async';
 
 import '../app_router.dart'; // 🔥 IMPORTANT
+import '../startup_diag.dart';
 
 class SplashScreen extends StatefulWidget {
 const SplashScreen({super.key});
@@ -26,7 +27,7 @@ super.initState();
 /// 🔥 PREMIUM TEXT FADE
 textController = AnimationController(
 vsync: this,
-duration: const Duration(milliseconds: 4500),
+duration: const Duration(milliseconds: 1600),
 );
 
 textFade = CurvedAnimation(
@@ -37,7 +38,7 @@ curve: Curves.easeInOut,
 /// 🔥 SCREEN CROSSFADE
 transitionController = AnimationController(
 vsync: this,
-duration: const Duration(milliseconds: 900),
+duration: const Duration(milliseconds: 500),
 );
 
 screenFade = Tween<double>(begin: 1, end: 0).animate(
@@ -51,11 +52,12 @@ runSequence();
 }
 
 Future<void> runSequence() async {
+startupDiag('SplashScreen.runSequence', 'start');
 /// 1. fade in tagline
 await textController.forward();
 
 /// 2. slight pause
-await Future.delayed(const Duration(milliseconds: 500));
+await Future.delayed(const Duration(milliseconds: 280));
 
 /// 3. fade out splash
 await transitionController.forward();
@@ -63,6 +65,7 @@ await transitionController.forward();
 /// 4. HAND OFF TO ROUTER (CRITICAL FIX)
 if (!mounted) return;
 
+startupDiag('SplashScreen.runSequence', 'pushReplacement → AppRouter');
 Navigator.pushReplacement(
 context,
 PageRouteBuilder(
@@ -76,6 +79,7 @@ child: child,
 },
 ),
 );
+startupDiag('SplashScreen.runSequence', 'done');
 }
 
 @override

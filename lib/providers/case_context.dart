@@ -10,12 +10,19 @@ import '../services/firestore_fields.dart';
 import '../services/invite_service.dart';
 import '../services/revenuecat_service.dart';
 import '../services/subscription_service.dart';
+import '../startup_diag.dart';
 
 /// Single source of truth for signed-in user profile, case membership,
 /// subscription state, and related Firestore listeners.
 ///
 /// [AppRouter] only reads this; it does not load user/case data itself.
 class CaseContext extends ChangeNotifier {
+  /// First Firestore user-doc snapshot can hang offline / permission / channel issues.
+  static const Duration _firstUserDocTimeout = Duration(seconds: 18);
+
+  /// RevenueCat network can stall on poor connectivity.
+  static const Duration _premiumRefreshTimeout = Duration(seconds: 25);
+
   CaseContext({SubscriptionService? subscriptionService})
       : _subscription = subscriptionService;
 
@@ -127,6 +134,10 @@ class CaseContext extends ChangeNotifier {
     }
   }
 
+  /// Serializes [authStateChanges] with an immediate current-user bootstrap so the
+  /// router does not wait indefinitely for the first stream tick.
+  Future<void> _authChain = Future<void>.value();
+
   StreamSubscription<User?>? _authSub;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _userDocSub;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _caseDocSub;
@@ -140,14 +151,34 @@ class CaseContext extends ChangeNotifier {
 
   /// Call once from [ChangeNotifierProvider] create.
   void start() {
+    startupDiag('CaseContext.start', 'subscribe auth + prime currentUser');
     if (kDebugMode) {
       debugPrint(
-        '[CaseContext] start() — subscribing to authStateChanges',
+        '[CaseContext] start() — auth queue + authStateChanges',
       );
     }
     _subscription?.addListener(_onSubscriptionServiceChanged);
-    // Session service: not UI.rebuilds — intentional long-lived [listen] (not paired with [StreamBuilder]).
-    _authSub = FirebaseAuth.instance.authStateChanges().listen(_onAuthChanged);
+
+    final cur = FirebaseAuth.instance.currentUser;
+    // Signed-out: unblock [sessionReadyForRouter] synchronously — do not wait for
+    // the first authStateChanges tick (can lag), which previously trapped guests in
+    // [SessionLoadingGate] indefinitely with authInitializing == true.
+    if (cur == null) {
+      authInitializing = false;
+      userDocLoading = false;
+      premiumLoading = false;
+      _user = null;
+      notifyListeners();
+      startupDiag(
+        'CaseContext.start',
+        'sync signed-out → sessionReadyForRouter without waiting for stream',
+      );
+    }
+
+    _authSub = FirebaseAuth.instance.authStateChanges().listen((User? user) {
+      _authChain = _authChain.then((_) => _onAuthChanged(user));
+    });
+    _authChain = _authChain.then((_) => _onAuthChanged(cur));
   }
 
   void _onSubscriptionServiceChanged() {
@@ -186,16 +217,25 @@ class CaseContext extends ChangeNotifier {
     _log(
       '[CaseContext] authStateChanges → ${user == null ? "signedOut" : "signedIn"}',
     );
+    startupDiag(
+      'CaseContext._onAuthChanged',
+      user == null ? 'signedOut' : 'uid=${user.uid}',
+    );
     authInitializing = false;
 
     if (user == null) {
       await _clearSession();
       _userDocFirstSnapshotDone = false;
       _notifyListenersAndTrackReady();
+      startupDiag('CaseContext._onAuthChanged', 'signed-out session cleared');
       return;
     }
 
     if (_sessionUid == user.uid) {
+      startupDiag(
+        'CaseContext._onAuthChanged',
+        'skip duplicate uid (already hydrated)',
+      );
       return;
     }
 
@@ -213,8 +253,11 @@ class CaseContext extends ChangeNotifier {
         await RevenueCatService.logIn(user.uid);
       } catch (_) {}
 
+      startupDiag('CaseContext.hydrate', 'ensureUserDoc');
       await _ensureUserDoc(user);
+      startupDiag('CaseContext.hydrate', 'subscribeUserDoc');
       await _subscribeUserDoc(user.uid);
+      startupDiag('CaseContext.hydrate', 'refreshPremiumStatus');
       await refreshPremiumStatus();
 
       if (_inviteCheckedUid != user.uid) {
@@ -236,7 +279,12 @@ class CaseContext extends ChangeNotifier {
     try {
       final fn = FirebaseFunctions.instanceFor(region: 'us-central1');
       final callable = fn.httpsCallable('ensureUserBootstrap');
-      await callable.call();
+      await callable.call().timeout(
+            const Duration(seconds: 20),
+            onTimeout: () {
+              throw TimeoutException('ensureUserBootstrap');
+            },
+          );
     } catch (e) {
       _log('[CaseContext] _ensureUserDoc failed: $e');
     }
@@ -280,7 +328,22 @@ class CaseContext extends ChangeNotifier {
       }
       _notifyListenersAndTrackReady();
     });
-    await first.future;
+    try {
+      await first.future.timeout(_firstUserDocTimeout);
+    } on TimeoutException {
+      _log(
+        '[CaseContext] user doc first snapshot TIMEOUT (${_firstUserDocTimeout.inSeconds}s) — unblocking router',
+      );
+      startupDiag(
+        'CaseContext._subscribeUserDoc',
+        'TIMEOUT — forcing userDocLoading=false',
+      );
+      userDocLoading = false;
+      if (!first.isCompleted) {
+        first.complete();
+      }
+      _notifyListenersAndTrackReady();
+    }
   }
 
   void _syncCaseListener(String? cid) {
@@ -359,14 +422,30 @@ class CaseContext extends ChangeNotifier {
     try {
       final sub = _subscription;
       if (sub != null) {
-        await sub.refresh();
+        try {
+          await sub.refresh().timeout(_premiumRefreshTimeout);
+        } on TimeoutException {
+          _log(
+            '[CaseContext] refreshPremiumStatus SubscriptionService.refresh TIMEOUT',
+          );
+          startupDiag('refreshPremiumStatus', 'SubscriptionService TIMEOUT');
+        }
         _syncRcPremiumFromService();
         _log(
           '[CaseContext] refreshPremiumStatus (SubscriptionService) → '
           'revenueCatPremium=$_revenueCatPremium',
         );
       } else {
-        _revenueCatPremium = await RevenueCatService.hasProEntitlement();
+        try {
+          _revenueCatPremium = await RevenueCatService.hasProEntitlement()
+              .timeout(_premiumRefreshTimeout);
+        } on TimeoutException {
+          _revenueCatPremium = previousPremium;
+          _log(
+            '[CaseContext] refreshPremiumStatus hasProEntitlement TIMEOUT',
+          );
+          startupDiag('refreshPremiumStatus', 'RevenueCat direct TIMEOUT');
+        }
         _log(
           '[CaseContext] refreshPremiumStatus (direct RC) → '
           'revenueCatPremium=$_revenueCatPremium',

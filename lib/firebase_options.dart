@@ -51,7 +51,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyCIzlG0CDHMzepP1prLQnH8hXGwbG4PhdI',
-    appId: '1:884928621500:android:430969777f2843ee5899b9',
+    appId: '1:884928621500:android:a77997b61cc170095899b9',
     messagingSenderId: '884928621500',
     projectId: 'parentledger-prod',
     databaseURL: 'https://parentledger-prod-default-rtdb.firebaseio.com',
@@ -65,7 +65,7 @@ class DefaultFirebaseOptions {
     projectId: 'parentledger-prod',
     databaseURL: 'https://parentledger-prod-default-rtdb.firebaseio.com',
     storageBucket: 'parentledger-prod.firebasestorage.app',
-    iosBundleId: 'com.example.parentledger',
+    iosBundleId: 'com.parentledger.app',
   );
 
 }

@@ -115,17 +115,15 @@ class _PDFPreviewScreenState extends State<PDFPreviewScreen> {
     if (path == null || path.isEmpty) return;
     final f = File(path);
     if (!await f.exists()) return;
-    await SharePlus.instance.share(
-      ShareParams(
-        files: [
-          XFile(
-            path,
-            mimeType: 'application/pdf',
-            name: 'court_summary.pdf',
-          ),
-        ],
-        subject: widget.title,
-      ),
+    await Share.shareXFiles(
+      [
+        XFile(
+          path,
+          mimeType: 'application/pdf',
+          name: 'court_summary.pdf',
+        ),
+      ],
+      subject: widget.title,
     );
   }
 

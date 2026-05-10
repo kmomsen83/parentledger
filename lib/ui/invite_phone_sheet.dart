@@ -3,12 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_contacts/flutter_contacts.dart'
-    show
-        Contact,
-        ContactProperty,
-        FlutterContacts,
-        PermissionStatus,
-        PermissionType;
+    show Contact, FlutterContacts;
 
 import '../design/design.dart';
 import 'widgets/us_phone_input_formatter.dart';
@@ -63,10 +58,8 @@ class _InvitePhoneSheetState extends State<_InvitePhoneSheet> {
 
   Future<void> _importContact() async {
     try {
-      final status =
-          await FlutterContacts.permissions.request(PermissionType.read);
-      if (status != PermissionStatus.granted &&
-          status != PermissionStatus.limited) {
+      final granted = await FlutterContacts.requestPermission(readonly: true);
+      if (!granted) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -283,9 +276,8 @@ class _ContactPickSheetState extends State<_ContactPickSheet> {
 
   Future<void> _load() async {
     try {
-      final list = await FlutterContacts.getAll(
-        properties: {ContactProperty.phone},
-        limit: 800,
+      final list = await FlutterContacts.getContacts(
+        withProperties: true,
       );
       if (mounted) {
         setState(() {
@@ -310,7 +302,7 @@ class _ContactPickSheetState extends State<_ContactPickSheet> {
     final filtered = _all
         .where((c) {
           if (q.isEmpty) return true;
-          final name = (c.displayName ?? '').toLowerCase();
+          final name = c.displayName.toLowerCase();
           return name.contains(q);
         })
         .take(80)
@@ -348,7 +340,9 @@ class _ContactPickSheetState extends State<_ContactPickSheet> {
                       }
                       return ListTile(
                         title: Text(
-                          c.displayName ?? 'Contact',
+                          c.displayName.isNotEmpty
+                              ? c.displayName
+                              : 'Contact',
                           style: PLDesign.body.copyWith(
                             fontWeight: FontWeight.w600,
                           ),

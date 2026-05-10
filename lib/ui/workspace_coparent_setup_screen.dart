@@ -97,9 +97,7 @@ class _WorkspaceCoparentSetupScreenState
       inviterFirstName: name,
       invite: r,
     );
-    await SharePlus.instance.share(
-      ShareParams(text: body),
-    );
+    await Share.share(body);
   }
 
   Future<void> _continueOnboarding() async {

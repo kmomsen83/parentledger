@@ -93,9 +93,7 @@ $universalLink
       );
       return;
     }
-    await SharePlus.instance.share(
-      ShareParams(text: _shareBody(links.universalLink)),
-    );
+    await Share.share(_shareBody(links.universalLink));
   }
 
   Future<void> _copyUniversalLink() async {

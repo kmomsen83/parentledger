@@ -197,10 +197,8 @@ class SubscriptionService extends ChangeNotifier {
 
   static Future<bool> purchase(Package package) async {
     try {
-      final result =
-          await Purchases.purchase(PurchaseParams.package(package));
-      return result.customerInfo.entitlements.active
-          .containsKey(entitlementId);
+      final info = await Purchases.purchasePackage(package);
+      return info.entitlements.active.containsKey(entitlementId);
     } catch (_) {
       if (kDebugMode) debugPrint('Purchase failed');
       return false;
