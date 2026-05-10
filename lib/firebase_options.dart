@@ -33,10 +33,7 @@ class DefaultFirebaseOptions {
           'you can reconfigure this by running the FlutterFire CLI again.',
         );
       case TargetPlatform.windows:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for windows - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        return windows;
       case TargetPlatform.linux:
         throw UnsupportedError(
           'DefaultFirebaseOptions have not been configured for linux - '
@@ -66,6 +63,17 @@ class DefaultFirebaseOptions {
     databaseURL: 'https://parentledger-prod-default-rtdb.firebaseio.com',
     storageBucket: 'parentledger-prod.firebasestorage.app',
     iosBundleId: 'com.parentledger.app',
+  );
+
+  /// Desktop Windows uses the same Firebase project as Android until a dedicated
+  /// Windows app is registered in the Firebase Console (run `flutterfire configure`).
+  static const FirebaseOptions windows = FirebaseOptions(
+    apiKey: 'AIzaSyCIzlG0CDHMzepP1prLQnH8hXGwbG4PhdI',
+    appId: '1:884928621500:android:a77997b61cc170095899b9',
+    messagingSenderId: '884928621500',
+    projectId: 'parentledger-prod',
+    databaseURL: 'https://parentledger-prod-default-rtdb.firebaseio.com',
+    storageBucket: 'parentledger-prod.firebasestorage.app',
   );
 
 }

@@ -83,10 +83,7 @@ void _expandArb(
   final file = File('${root.path}/$path');
   final raw = json.decode(file.readAsStringSync()) as Map<String, dynamic>;
   final alreadyExpanded = raw.keys.any(
-    (k) =>
-        k is String &&
-        !k.startsWith('@') &&
-        k.endsWith('_neutral'),
+    (k) => !k.startsWith('@') && k.endsWith('_neutral'),
   );
   if (alreadyExpanded) {
     stdout.writeln('Skip expand (already tone keys): $path');

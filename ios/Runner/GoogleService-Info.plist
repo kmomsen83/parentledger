@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>API_KEY</key>
+	<string>AIzaSyAESmwjdXKylNG2ky7xvVjnE1HftHJjAkY</string>
+	<key>GCM_SENDER_ID</key>
+	<string>884928621500</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.parentledger.app</string>
+	<key>PROJECT_ID</key>
+	<string>parentledger-prod</string>
+	<key>STORAGE_BUCKET</key>
+	<string>parentledger-prod.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false/>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false/>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true/>
+	<key>IS_GCM_ENABLED</key>
+	<true/>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true/>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:884928621500:ios:9b02aca989a6d76b5899b9</string>
+	<key>DATABASE_URL</key>
+	<string>https://parentledger-prod-default-rtdb.firebaseio.com</string>
+</dict>
+</plist>

@@ -23,6 +23,13 @@ migrate_working_dir/
 # is commented out by default.
 #.vscode/
 
+# Node (never commit dependency trees — prevents merge corruption & repo bloat)
+node_modules/
+**/node_modules/
+
+# Android signing secrets (see android/key.properties.example)
+android/key.properties
+
 # Flutter/Dart/Pub related
 **/doc/api/
 **/ios/Flutter/.last_build_id

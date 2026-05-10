@@ -5,9 +5,18 @@ import 'package:flutter/foundation.dart';
 class CrashlyticsService {
   CrashlyticsService._();
 
+  static bool _bootstrapped = false;
+
   static Future<void> bootstrap() async {
+    if (_bootstrapped) return;
+    _bootstrapped = true;
     await FirebaseCrashlytics.instance
         .setCrashlyticsCollectionEnabled(!kDebugMode);
+    FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+    PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
   }
 
   static void log(String message) {

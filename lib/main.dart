@@ -21,12 +21,11 @@ import 'design/design.dart';
 import 'services/invite_link_service.dart';
 import 'ui/invite/invite_accept_named_route.dart';
 import 'services/case_switcher_service.dart';
+import 'services/app_check_bootstrap.dart';
 import 'services/revenuecat_service.dart';
 import 'services/subscription_service.dart';
+import 'services/crashlytics_service.dart';
 import 'startup_diag.dart';
-
-/// Temporary: skip Purchases bootstrap until Firebase init is stable (isolate failures).
-const bool _kTempSkipRevenueCatBootstrap = true;
 
 /// Always logs to console during Firebase bootstrap so failures are visible in `flutter run`.
 void _firebaseBootstrapLog(String message) {
@@ -56,6 +55,7 @@ void _logDefaultFirebaseOptionsSnapshot() {
 
 Future<void> _initializeFirebase() async {
   const maxAttempts = 3;
+  const initTimeout = Duration(seconds: 45);
 
   _firebaseBootstrapLog('_initializeFirebase() start');
   _firebaseBootstrapLog(
@@ -82,6 +82,12 @@ Future<void> _initializeFirebase() async {
       );
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
+      ).timeout(
+        initTimeout,
+        onTimeout: () => throw TimeoutException(
+          'Firebase.initializeApp exceeded ${initTimeout.inSeconds}s',
+          initTimeout,
+        ),
       );
       _firebaseBootstrapLog(
         'Firebase.initializeApp() SUCCESS — '
@@ -92,6 +98,8 @@ Future<void> _initializeFirebase() async {
           'default app: ${Firebase.app().name} appId=${Firebase.app().options.appId}',
         );
       }
+      await CrashlyticsService.bootstrap();
+      await AppCheckBootstrap.activateIfNeeded();
       startupDiag('_initializeFirebase', 'success');
       return;
     } catch (e, st) {
@@ -252,16 +260,10 @@ class _AppBootstrapState extends State<AppBootstrap> {
       }
     }
 
-    if (_kTempSkipRevenueCatBootstrap) {
-      _firebaseBootstrapLog(
-        'TEMP: skipping RevenueCatService.configure (Firebase isolation)',
-      );
-    } else {
-      try {
-        await RevenueCatService.configure();
-      } catch (e, st) {
-        debugPrint('RevenueCat configure failed: $e\n$st');
-      }
+    try {
+      await RevenueCatService.configure();
+    } catch (e, st) {
+      debugPrint('RevenueCat configure failed: $e\n$st');
     }
 
     try {

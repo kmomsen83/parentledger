@@ -3099,7 +3099,7 @@ expenseSnapshot == null
 ? _buildExpenseBalanceAndActions(context)
 : _buildExpenseBalanceFromExpenseSnapshot(
 context,
-expenseSnapshot!,
+expenseSnapshot,
 uid!,
 coparentId,
 ),
@@ -3165,7 +3165,7 @@ PLDesign.success,
 () {
 if (loadingExchange || caseId == null) return;
 go(ExchangeCheckinScreen(
-caseId: caseId!,
+caseId: caseId,
 scheduledExchange: nextExchange,
 ));
 },
@@ -3201,7 +3201,7 @@ return;
 }
 if (_isActiveExchangeFor(nextExchange) && caseId != null) {
 go(ExchangeCheckinScreen(
-caseId: caseId!,
+caseId: caseId,
 scheduledExchange: nextExchange,
 ));
 } else {
@@ -3212,7 +3212,7 @@ go(const UpcomingExchangesListScreen());
 const SizedBox(width: 12),
 expenseSnapshot == null
 ? _pendingExpensesStatusTileNoCase(context)
-: _pendingExpensesStatusTileFromExpenseSnapshot(context, expenseSnapshot!),
+: _pendingExpensesStatusTileFromExpenseSnapshot(context, expenseSnapshot),
 ]),
 const SizedBox(height: 8),
 _sectionLabel('TOOLS'),

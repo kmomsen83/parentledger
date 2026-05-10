@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -9,6 +10,25 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("dev.flutter.flutter-gradle-plugin")
 }
+
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
+}
+
+val localProperties = Properties()
+val localPropertiesFile = rootProject.file("local.properties")
+if (localPropertiesFile.exists()) {
+    localPropertiesFile.inputStream().use { localProperties.load(it) }
+}
+
+fun mapsApiKeyProperty(): String =
+    System.getenv("GOOGLE_MAPS_API_KEY")
+        ?: localProperties.getProperty("GOOGLE_MAPS_API_KEY")
+        ?: (project.findProperty("GOOGLE_MAPS_API_KEY") as String?)
+        ?: (project.findProperty("GOOGLE_PLACES_API_KEY") as String?)
+        ?: ""
 
 android {
     namespace = "com.parentledger.app"
@@ -22,10 +42,15 @@ android {
 
     signingConfigs {
         create("release") {
-            storeFile = file("C:/dev/parentledger/android/app/upload-keystore.jks")
-            storePassword = "Maggie122012!"
-            keyAlias = "upload"
-            keyPassword = "Maggie122012!"
+            if (keystorePropertiesFile.exists()) {
+                keyAlias = keystoreProperties.getProperty("keyAlias") ?: ""
+                keyPassword = keystoreProperties.getProperty("keyPassword") ?: ""
+                val storeFileProp = keystoreProperties.getProperty("storeFile")
+                if (!storeFileProp.isNullOrBlank()) {
+                    storeFile = file(storeFileProp)
+                }
+                storePassword = keystoreProperties.getProperty("storePassword") ?: ""
+            }
         }
     }
 
@@ -36,16 +61,17 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
 
-        val mapsApiKey =
-            (project.findProperty("GOOGLE_MAPS_API_KEY") as String?)
-                ?: (project.findProperty("GOOGLE_PLACES_API_KEY") as String?)
-                ?: ""
-        manifestPlaceholders["GOOGLE_MAPS_API_KEY"] = mapsApiKey
+        manifestPlaceholders["GOOGLE_MAPS_API_KEY"] = mapsApiKeyProperty()
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig =
+                if (keystorePropertiesFile.exists()) {
+                    signingConfigs.getByName("release")
+                } else {
+                    signingConfigs.getByName("debug")
+                }
         }
     }
 }

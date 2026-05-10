@@ -1,0 +1,6 @@
+# Copy to key.properties (never commit key.properties).
+# Release signing is optional locally — without it, release builds fall back to debug signing.
+storePassword=your-keystore-password
+keyPassword=your-key-password
+keyAlias=upload
+storeFile=upload-keystore.jks

@@ -24,12 +24,12 @@ subprojects {
 subprojects {
     plugins.withId("com.android.application") {
         extensions.configure<AppExtension>("android") {
-            compileSdkVersion(34)
+            compileSdkVersion(35)
         }
     }
     plugins.withId("com.android.library") {
         extensions.configure<LibraryExtension>("android") {
-            compileSdkVersion(34)
+            compileSdkVersion(35)
         }
     }
 }
