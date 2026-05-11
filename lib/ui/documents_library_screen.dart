@@ -88,7 +88,8 @@ class _DocumentsLibraryScreenState extends State<DocumentsLibraryScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   DropdownButtonFormField<CaseDocumentCategory>(
-                    value: categoryHolder[0],
+                    key: ValueKey<CaseDocumentCategory>(categoryHolder[0]),
+                    initialValue: categoryHolder[0],
                     decoration: InputDecoration(
                       labelText: 'Category',
                       labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.75)),

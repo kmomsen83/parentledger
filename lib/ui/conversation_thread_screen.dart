@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:parentledger/l10n/context_l10n.dart';
 import 'package:flutter/material.dart';
@@ -77,6 +79,11 @@ class _ConversationThreadScreenState extends State<ConversationThreadScreen> {
   bool _markedReadOnce = false;
   bool _trustBannerMinimized = false;
 
+  /// Updated each [build] for [controller] listener (no async role lookup).
+  bool _composerIsAttorney = false;
+
+  Timer? _typingClearTimer;
+
   final DateFormat timeFormat = DateFormat('MMM d, yyyy • HH:mm');
 
   static const List<String> _tagOptions = [
@@ -101,13 +108,67 @@ class _ConversationThreadScreenState extends State<ConversationThreadScreen> {
     if (draft != null && draft.isNotEmpty) {
       controller.text = draft;
     }
+    controller.addListener(_onComposerTextChanged);
   }
 
   @override
   void dispose() {
+    _typingClearTimer?.cancel();
+    controller.removeListener(_onComposerTextChanged);
+    if (!_composerIsAttorney && widget.caseId.isNotEmpty) {
+      unawaited(
+        CaseMessagingService.updateTypingState(
+          caseId: widget.caseId,
+          conversationId: widget.conversationId,
+          isTyping: false,
+        ),
+      );
+    }
     _scrollController.dispose();
     controller.dispose();
     super.dispose();
+  }
+
+  void _onComposerTextChanged() {
+    if (_composerIsAttorney || widget.caseId.isEmpty) return;
+    final t = controller.text.trim();
+    _typingClearTimer?.cancel();
+    if (t.isEmpty) {
+      unawaited(
+        CaseMessagingService.updateTypingState(
+          caseId: widget.caseId,
+          conversationId: widget.conversationId,
+          isTyping: false,
+        ),
+      );
+      return;
+    }
+    unawaited(
+      CaseMessagingService.updateTypingState(
+        caseId: widget.caseId,
+        conversationId: widget.conversationId,
+        isTyping: true,
+      ),
+    );
+    _typingClearTimer = Timer(const Duration(seconds: 3), () {
+      if (!mounted) return;
+      if (controller.text.trim().isEmpty) return;
+      unawaited(
+        CaseMessagingService.updateTypingState(
+          caseId: widget.caseId,
+          conversationId: widget.conversationId,
+          isTyping: false,
+        ),
+      );
+    });
+  }
+
+  bool _peerTypingFresh(Map<String, dynamic>? d) {
+    final tu = d?['typingUserId']?.toString() ?? '';
+    if (tu.isEmpty || tu == uid) return false;
+    final raw = d?['typingUpdatedAt'];
+    if (raw is! Timestamp) return false;
+    return DateTime.now().difference(raw.toDate()) < const Duration(seconds: 8);
   }
 
   String _body(Map<String, dynamic> m) => (m['text'] ?? '').toString();
@@ -160,6 +221,11 @@ class _ConversationThreadScreenState extends State<ConversationThreadScreen> {
 
     setState(() => sending = true);
     try {
+      await CaseMessagingService.updateTypingState(
+        caseId: widget.caseId,
+        conversationId: widget.conversationId,
+        isTyping: false,
+      );
       await CaseMessagingService.sendTextMessage(
         caseId: widget.caseId,
         conversationId: widget.conversationId,
@@ -192,6 +258,11 @@ class _ConversationThreadScreenState extends State<ConversationThreadScreen> {
       sending = true;
     });
     try {
+      await CaseMessagingService.updateTypingState(
+        caseId: widget.caseId,
+        conversationId: widget.conversationId,
+        isTyping: false,
+      );
       await CaseMessagingService.sendTextMessage(
         caseId: widget.caseId,
         conversationId: widget.conversationId,
@@ -277,8 +348,9 @@ class _ConversationThreadScreenState extends State<ConversationThreadScreen> {
   }
 
   Future<void> _generateAttorneyBrief() async {
-    final premium = context.read<CaseContext>().isPremium;
-    if (!await requirePremiumOrPrompt(context, guard: premium)) return;
+    final session = context.read<CaseContext>();
+    final allow = session.isAttorney || session.unlockedParentPremiumFeatures;
+    if (!await requirePremiumOrPrompt(context, guard: allow)) return;
     if (!mounted) return;
 
     showDialog<void>(
@@ -1026,6 +1098,7 @@ class _ConversationThreadScreenState extends State<ConversationThreadScreen> {
   @override
   Widget build(BuildContext context) {
     final isAttorney = context.watch<CaseContext>().isAttorney;
+    _composerIsAttorney = isAttorney;
 
     if (widget.caseId.isEmpty) {
       return Scaffold(
@@ -1386,7 +1459,11 @@ class _ConversationThreadScreenState extends State<ConversationThreadScreen> {
               child: Material(
                 color: PLDesign.surface,
                 elevation: 8,
-                child: Container(
+                child: StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                  stream: _conversationDocStream,
+                  builder: (context, convSnap) {
+                    final showTyping = _peerTypingFresh(convSnap.data?.data());
+                    return Container(
                   padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
                   decoration: BoxDecoration(
                     border: Border(
@@ -1403,6 +1480,17 @@ class _ConversationThreadScreenState extends State<ConversationThreadScreen> {
                           color: PLDesign.textMuted,
                         ),
                       ),
+                      if (showTyping) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          'Co-parent is typing…',
+                          style: PLDesign.caption.copyWith(
+                            fontSize: 12,
+                            color: PLDesign.primary,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 10),
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.end,
@@ -1480,6 +1568,8 @@ class _ConversationThreadScreenState extends State<ConversationThreadScreen> {
                       ),
                     ],
                   ),
+                );
+                  },
                 ),
               ),
             )

@@ -165,15 +165,6 @@ class InviteLinkService {
     return uri;
   }
 
-  static String? _extractInviteId(Uri? uri) {
-    if (uri == null) return null;
-    final id = uri.queryParameters['id']?.trim();
-    if (id != null && id.isNotEmpty) return id;
-    final invite = uri.queryParameters['inviteId']?.trim();
-    if (invite != null && invite.isNotEmpty) return invite;
-    return null;
-  }
-
   /// Path segments after `/invite/` (HTTPS) or under `parentledger://invite/…` (native).
   static List<String> _normalizedInvitePathParts(Uri uri) {
     if (uri.scheme.toLowerCase() == 'parentledger' &&
@@ -227,8 +218,29 @@ class InviteLinkService {
     }
   }
 
+  /// Path/query invite payloads must not be accepted from arbitrary third-party sites
+  /// (phishing / token exfiltration). Native app scheme + production domain only.
+  static bool _inviteDeepLinkSourceTrusted(Uri uri) {
+    final scheme = uri.scheme.toLowerCase();
+    if (scheme == 'parentledger' && uri.host.toLowerCase() == 'invite') {
+      return true;
+    }
+    return _isTrustedInviteHost(uri.host);
+  }
+
+  static String? _extractInviteId(Uri? uri) {
+    if (uri == null) return null;
+    if (!_inviteDeepLinkSourceTrusted(uri) && !kDebugMode) return null;
+    final id = uri.queryParameters['id']?.trim();
+    if (id != null && id.isNotEmpty) return id;
+    final invite = uri.queryParameters['inviteId']?.trim();
+    if (invite != null && invite.isNotEmpty) return invite;
+    return null;
+  }
+
   static String? _extractInviteToken(Uri? uri) {
     if (uri == null) return null;
+    if (!_inviteDeepLinkSourceTrusted(uri) && !kDebugMode) return null;
     final fromPath = _tokenFromInvitePath(uri);
     if (fromPath != null) return fromPath;
     final token = uri.queryParameters['token']?.trim();
@@ -246,14 +258,11 @@ class InviteLinkService {
     final normalized =
         raw.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
     if (normalized.length < 6 || normalized.length > 8) return null;
-    final host = uri.host.toLowerCase();
-    final path = uri.path.toLowerCase();
-    final trustedHost = _isTrustedInviteHost(host);
-    final invitePath = path.contains('invite');
     final inviteNativeHost =
         uri.scheme.toLowerCase() == 'parentledger' &&
             uri.host.toLowerCase() == 'invite';
-    if (trustedHost || invitePath || inviteNativeHost) {
+    final trustedHost = _isTrustedInviteHost(uri.host);
+    if (trustedHost || inviteNativeHost) {
       return normalized;
     }
     if (kDebugMode) {

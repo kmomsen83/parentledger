@@ -11,11 +11,15 @@ import '../../services/attorney_case_priority.dart';
 import '../../services/attorney_case_status_service.dart';
 import '../../services/case_switcher_service.dart';
 import '../../services/counsel_access_policy.dart';
+import '../calendar_month_view_screen.dart';
 import '../case_insights_screen.dart';
 import '../case_unified_timeline_screen.dart';
+import '../compliance_report_screen.dart';
 import '../conversation_thread_screen.dart';
 import '../documents_library_screen.dart';
+import '../expenses_list_screen.dart';
 import '../legal_export_center_screen.dart';
+import '../timeline_violations_screen.dart';
 import 'attorney_export_case_sheet.dart';
 import 'attorney_priority_badge.dart';
 
@@ -47,7 +51,7 @@ class _ClientCaseScreenState extends State<ClientCaseScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       context.read<CaseSwitcherService>().selectCase(widget.clientId);
@@ -333,6 +337,7 @@ class _ClientCaseScreenState extends State<ClientCaseScreen>
                 Tab(text: 'Messages'),
                 Tab(text: 'Documents'),
                 Tab(text: 'Insights'),
+                Tab(text: 'Matter'),
               ],
             ),
           ),
@@ -447,6 +452,7 @@ class _ClientCaseScreenState extends State<ClientCaseScreen>
                       embedInParent: true,
                     ),
                     _ClientInsightsTab(caseId: widget.clientId),
+                    _AttorneyMatterToolsTab(caseId: widget.clientId),
                   ],
                 ),
               ),
@@ -454,6 +460,154 @@ class _ClientCaseScreenState extends State<ClientCaseScreen>
           ),
         );
       },
+    );
+  }
+}
+
+class _AttorneyMatterToolsTab extends StatelessWidget {
+  const _AttorneyMatterToolsTab({required this.caseId});
+
+  final String caseId;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 24),
+      children: [
+        Text(
+          'Case workspace',
+          style: PLDesign.sectionTitle.copyWith(fontSize: 15),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          'Open matter-scoped tools. Exports use your saved attorney branding.',
+          style: PLDesign.caption.copyWith(
+            color: PLDesign.textMuted,
+            height: 1.35,
+          ),
+        ),
+        const SizedBox(height: 14),
+        _MatterToolRow(
+          icon: Icons.calendar_month_rounded,
+          title: 'Calendar',
+          subtitle: 'Custody schedule & events',
+          onTap: () => Navigator.push<void>(
+            context,
+            MaterialPageRoute<void>(
+              builder: (_) => const CalendarMonthViewScreen(),
+            ),
+          ),
+        ),
+        _MatterToolRow(
+          icon: Icons.receipt_long_rounded,
+          title: 'Expenses & reimbursements',
+          subtitle: 'Shared ledger for this matter',
+          onTap: () => Navigator.push<void>(
+            context,
+            MaterialPageRoute<void>(
+              builder: (_) => const ExpensesListScreen(),
+            ),
+          ),
+        ),
+        _MatterToolRow(
+          icon: Icons.assignment_turned_in_outlined,
+          title: 'Compliance & reports',
+          subtitle: 'Structured matter summary',
+          onTap: () => Navigator.push<void>(
+            context,
+            MaterialPageRoute<void>(
+              builder: (_) => const ComplianceReportScreen(),
+            ),
+          ),
+        ),
+        _MatterToolRow(
+          icon: Icons.gavel_rounded,
+          title: 'Timeline violations',
+          subtitle: 'Review flagged schedule issues',
+          onTap: () => Navigator.push<void>(
+            context,
+            MaterialPageRoute<void>(
+              builder: (_) => TimelineViolationsScreen(caseId: caseId),
+            ),
+          ),
+        ),
+        _MatterToolRow(
+          icon: Icons.folder_special_outlined,
+          title: 'Court export center',
+          subtitle: 'Bundles & legal exports',
+          onTap: () => Navigator.push<void>(
+            context,
+            MaterialPageRoute<void>(
+              builder: (_) => const LegalExportCenterScreen(),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MatterToolRow extends StatelessWidget {
+  const _MatterToolRow({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Material(
+        color: PLDesign.card,
+        borderRadius: BorderRadius.circular(14),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: PLDesign.primary.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(icon, color: PLDesign.primary, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: PLDesign.sectionTitle.copyWith(fontSize: 15),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: PLDesign.caption.copyWith(height: 1.25),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: PLDesign.textMuted.withValues(alpha: 0.7),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

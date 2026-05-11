@@ -100,7 +100,7 @@ fit: BoxFit.cover,
 /// ⭐ DARK GLASS OVERLAY
 Positioned.fill(
 child: Container(
-color: Colors.black.withOpacity(.55),
+color: Colors.black.withValues(alpha:.55),
 ),
 ),
 
@@ -138,10 +138,10 @@ const SizedBox(height: 28),
 Container(
 padding: const EdgeInsets.all(22),
 decoration: BoxDecoration(
-color: Colors.white.withOpacity(.06),
+color: Colors.white.withValues(alpha:.06),
 borderRadius: PLDesign.r20,
 border: Border.all(
-color: Colors.white.withOpacity(.15),
+color: Colors.white.withValues(alpha:.15),
 ),
 boxShadow: PLDesign.softShadow,
 ),
@@ -156,7 +156,7 @@ style: const TextStyle(color: Colors.white),
 decoration: InputDecoration(
 filled: true,
 fillColor:
-Colors.white.withOpacity(.04),
+Colors.white.withValues(alpha:.04),
 border: OutlineInputBorder(
 borderRadius:
 BorderRadius.circular(14),
@@ -194,7 +194,7 @@ hintStyle:
 const TextStyle(color: Colors.white38),
 filled: true,
 fillColor:
-Colors.white.withOpacity(.04),
+Colors.white.withValues(alpha:.04),
 border: OutlineInputBorder(
 borderRadius:
 BorderRadius.circular(14),
@@ -212,7 +212,7 @@ child: Container(
 padding:
 const EdgeInsets.all(16),
 decoration: BoxDecoration(
-color: Colors.white.withOpacity(.04),
+color: Colors.white.withValues(alpha:.04),
 borderRadius:
 BorderRadius.circular(14),
 ),
@@ -250,7 +250,7 @@ hintStyle:
 const TextStyle(color: Colors.white38),
 filled: true,
 fillColor:
-Colors.white.withOpacity(.04),
+Colors.white.withValues(alpha:.04),
 border: OutlineInputBorder(
 borderRadius:
 BorderRadius.circular(14),

@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../design/design.dart';
 import '../providers/case_context.dart';
 import '../services/case_expense_service.dart';
+import '../services/case_switcher_service.dart';
 import 'approve_deny_expense_screen.dart';
 
 /// Lists unpaid case expenses with running total (Firestore-backed).
@@ -15,7 +16,10 @@ class PendingExpensesDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final caseId = context.watch<CaseContext>().caseId;
+    final session = context.watch<CaseContext>();
+    final caseId = session.isAttorney
+        ? (context.watch<CaseSwitcherService>().selectedCaseId ?? session.caseId)
+        : session.caseId;
     final df = DateFormat.yMMMd();
 
     return Scaffold(

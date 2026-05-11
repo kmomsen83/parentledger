@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.io.File
 import java.util.Properties
 
 plugins {
@@ -47,7 +48,12 @@ android {
                 keyPassword = keystoreProperties.getProperty("keyPassword") ?: ""
                 val storeFileProp = keystoreProperties.getProperty("storeFile")
                 if (!storeFileProp.isNullOrBlank()) {
-                    storeFile = file(storeFileProp)
+                    val candidate =
+                        File(storeFileProp).takeIf { it.isAbsolute }
+                            ?: rootProject.file(storeFileProp)
+                    if (candidate.exists()) {
+                        storeFile = candidate
+                    }
                 }
                 storePassword = keystoreProperties.getProperty("storePassword") ?: ""
             }
@@ -66,12 +72,19 @@ android {
 
     buildTypes {
         release {
+            val releaseCfg = signingConfigs.getByName("release")
+            val releaseStoreOk =
+                releaseCfg.storeFile != null && releaseCfg.storeFile!!.exists()
             signingConfig =
-                if (keystorePropertiesFile.exists()) {
-                    signingConfigs.getByName("release")
+                if (keystorePropertiesFile.exists() && releaseStoreOk) {
+                    releaseCfg
                 } else {
                     signingConfigs.getByName("debug")
                 }
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }

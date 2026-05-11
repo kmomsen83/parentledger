@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../providers/case_context.dart';
-import '../services/subscription_service.dart';
+import '../models/premium_feature.dart';
 import '../models/timeline_event_model.dart';
+import '../providers/case_context.dart';
+import '../services/entitlement_manager.dart';
+import '../services/subscription_service.dart';
 import 'subscription_limits.dart';
 import '../ui/widgets/premium_upgrade_sheet.dart';
 
@@ -24,7 +26,9 @@ List<TimelineEventModel> applyFreeTierTimelineFilter(
   List<TimelineEventModel> newestFirst,
   BuildContext context,
 ) {
-  if (isPremium(context)) return newestFirst;
+  if (!EntitlementManager(context.read<CaseContext>()).appliesParentFreeTierCaps) {
+    return newestFirst;
+  }
   var messagesShown = 0;
   final out = <TimelineEventModel>[];
   for (final e in newestFirst) {
@@ -43,7 +47,7 @@ List<TimelineEventModel> applyFreeTierTimelineFilter(
 Future<bool> requirePremiumOrPrompt(
   BuildContext context, {
   required bool guard,
-  DashboardPremiumFeature feature = DashboardPremiumFeature.complianceReports,
+  PremiumFeature feature = PremiumFeature.complianceReports,
 }) async {
   if (guard) return true;
   await showPremiumUpgradeSheet(context, feature: feature);

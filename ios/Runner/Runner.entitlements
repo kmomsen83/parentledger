@@ -5,6 +5,7 @@
 	<key>com.apple.developer.associated-domains</key>
 	<array>
 		<string>applinks:parentledger.org</string>
+		<string>applinks:www.parentledger.org</string>
 	</array>
 </dict>
 </plist>

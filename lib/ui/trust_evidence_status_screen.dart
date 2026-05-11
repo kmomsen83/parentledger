@@ -12,7 +12,8 @@ class TrustEvidenceStatusScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final session = context.watch<CaseContext>();
     final linkedCase = session.caseId != null;
-    final premium = session.isPremium;
+    final premium =
+        session.isAttorney || session.unlockedParentPremiumFeatures;
     final members = session.memberIds.length;
 
     return Scaffold(

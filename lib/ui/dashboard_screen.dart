@@ -66,6 +66,9 @@ import 'widgets/guided_step_card.dart';
 import 'widgets/premium_locked_tap.dart';
 import 'widgets/premium_teaser_shell.dart';
 import 'widgets/premium_upgrade_sheet.dart';
+import 'widgets/dashboard/dashboard_badge.dart';
+import 'widgets/dashboard/dashboard_tool_card.dart';
+import 'widgets/dashboard/responsive_dashboard_grid.dart';
 
 class DashboardScreen extends StatefulWidget {
 const DashboardScreen({super.key});
@@ -521,7 +524,8 @@ else ...[
 if (_dashFairness != null)
 Row(
 children: [
-Container(
+Flexible(
+child: Container(
 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
 decoration: BoxDecoration(
 color: _dashFairnessResultColor().withValues(alpha: 0.14),
@@ -532,10 +536,13 @@ color: _dashFairnessResultColor().withValues(alpha: 0.45),
 ),
 child: Text(
 'Proposal: ${_dashFairness!['result']} · ${_dashFairnessScore()}',
+maxLines: 2,
+overflow: TextOverflow.ellipsis,
 style: TextStyle(
 color: _dashFairnessResultColor(),
 fontWeight: FontWeight.w800,
 fontSize: 12,
+),
 ),
 ),
 ),
@@ -2454,14 +2461,14 @@ padding: const EdgeInsets.symmetric(
 vertical: 22, horizontal: 12),
 decoration: BoxDecoration(
 gradient: LinearGradient(
-colors: [color.withOpacity(glow), PLDesign.card],
+colors: [color.withValues(alpha:glow), PLDesign.card],
 ),
 borderRadius: PLDesign.r20,
 border: Border.all(
-color: color.withOpacity(.4)),
+color: color.withValues(alpha:.4)),
 boxShadow: [
 BoxShadow(
-color: color.withOpacity(glow),
+color: color.withValues(alpha:glow),
 blurRadius: exchangePulseActive ? 25 : 12,
 )
 ],
@@ -2796,78 +2803,21 @@ Widget _dashboardTool(
   final locked = premiumTool && parentLocked;
   final limitedCalendar = calendarLimited && parentLocked;
 
-  final inner = Container(
-    padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 8),
-    decoration: BoxDecoration(
-      color: const Color(0xff0c1018),
-      borderRadius: PLDesign.r20,
-      border: Border.all(
-        color: PLDesign.premiumGold.withValues(alpha: 0.08),
-      ),
-      boxShadow: const [
-        BoxShadow(
-          color: Color(0x42000000),
-          blurRadius: 16,
-          offset: Offset(0, 8),
-        ),
-      ],
-    ),
-    child: Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(icon, color: PLDesign.premiumGold.withValues(alpha: 0.85), size: 26),
-        const SizedBox(height: 10),
-        Text(
-          label,
-          textAlign: TextAlign.center,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: PLDesign.body.copyWith(
-            fontWeight: FontWeight.w600,
-            fontSize: 13,
-            height: 1.2,
-          ),
-        ),
-      ],
-    ),
+  return DashboardToolCard(
+    icon: icon,
+    title: label,
+    onTap: tap,
+    cornerBadge:
+        limitedCalendar ? DashboardBadgeKind.limited : null,
+    lockedPremium: locked,
+    onLockedTap: locked
+        ? () => showPremiumUpgradeSheet(context, feature: premiumFeature)
+        : null,
   );
-
-  if (limitedCalendar) {
-    return pressable(
-      onTap: tap,
-      child: ClipRRect(
-        borderRadius: PLDesign.r20,
-        child: Stack(
-          clipBehavior: Clip.hardEdge,
-          children: [
-            inner,
-            const LimitedCornerBadge(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  if (locked) {
-    return PremiumLockedTapHost(
-      locked: true,
-      onLockedTap: () => showPremiumUpgradeSheet(context, feature: premiumFeature),
-      child: PremiumTeaserShell(
-        locked: true,
-        borderRadius: 20,
-        child: inner,
-      ),
-    );
-  }
-
-  return pressable(onTap: tap, child: inner);
 }
 
 @override
 Widget build(BuildContext context) {
-/// Fixed 3 columns → 3×3 grid for nine tools (balanced; avoids orphan tile on wide phones).
-const toolCrossCount = 3;
-
 final uid = FirebaseAuth.instance.currentUser?.uid;
 _syncNotificationUnreadStream(uid);
 final caseId = context.watch<CaseContext>().caseId;
@@ -2877,7 +2827,6 @@ _syncDashboardCaseStreams(caseId);
 if (caseId == null || uid == null) {
 return _dashboardScaffold(
 context,
-toolCrossCount: toolCrossCount,
 uid: uid,
 caseId: caseId,
 coparentId: coparentId,
@@ -2903,7 +2852,6 @@ headerSnap.connectionState == ConnectionState.waiting && !headerSnap.hasData;
 if (headerSnap.hasError) {
 return _dashboardScaffold(
 context,
-toolCrossCount: toolCrossCount,
 uid: uid,
 caseId: caseId,
 coparentId: coparentId,
@@ -2920,7 +2868,6 @@ exchangePulseActive: false,
 if (waitingHeader || !headerSnap.hasData) {
 return _dashboardScaffold(
 context,
-toolCrossCount: toolCrossCount,
 uid: uid,
 caseId: caseId,
 coparentId: coparentId,
@@ -2938,7 +2885,6 @@ tick.expenses,
 );
 return _dashboardScaffold(
 context,
-toolCrossCount: toolCrossCount,
 uid: uid,
 caseId: caseId,
 coparentId: coparentId,
@@ -2953,7 +2899,6 @@ exchangePulseActive: _isActiveExchangeFor(tick.nextExchange),
 
 Widget _dashboardScaffold(
 BuildContext context, {
-required int toolCrossCount,
 required String? uid,
 required String? caseId,
 required String? coparentId,
@@ -3216,13 +3161,7 @@ expenseSnapshot == null
 ]),
 const SizedBox(height: 8),
 _sectionLabel('TOOLS'),
-GridView.count(
-crossAxisCount: toolCrossCount,
-shrinkWrap: true,
-physics: const NeverScrollableScrollPhysics(),
-mainAxisSpacing: 14,
-crossAxisSpacing: 14,
-childAspectRatio: 1.02,
+ResponsiveDashboardGrid(
 children: [
 _dashboardTool(
     Icons.calendar_month,

@@ -48,7 +48,7 @@ borderRadius: BorderRadius.circular(16),
 border: Border.all(
 color: bg == Colors.transparent
 ? PLDesign.border
-: bg.withOpacity(.4)),
+: bg.withValues(alpha:.4)),
 ),
 child: Center(
 child: Text(
@@ -83,14 +83,14 @@ padding: const EdgeInsets.all(26),
 decoration: BoxDecoration(
 gradient: LinearGradient(
 colors: [
-PLDesign.danger.withOpacity(.9),
-PLDesign.warning.withOpacity(.9),
+PLDesign.danger.withValues(alpha:.9),
+PLDesign.warning.withValues(alpha:.9),
 ],
 ),
 borderRadius: PLDesign.r20,
 boxShadow: [
 BoxShadow(
-color: PLDesign.danger.withOpacity(.35),
+color: PLDesign.danger.withValues(alpha:.35),
 blurRadius: 40,
 spreadRadius: 2,
 )

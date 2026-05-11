@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../services/case_expense_service.dart';
+
 /// `cases/{caseId}/expenses/{expenseId}` — read-only view of common fields.
 class CaseExpense {
   const CaseExpense({
@@ -27,14 +29,13 @@ class CaseExpense {
     final amount = rawAmount is num
         ? rawAmount.toDouble()
         : double.tryParse('$rawAmount') ?? 0.0;
-    final ru = m['receiptUrl'];
     return CaseExpense(
       id: doc.id,
       amount: amount,
       description: (m['description'] ?? '').toString(),
       paid: m['paid'] == true,
       status: (m['status'] ?? 'unpaid').toString(),
-      receiptUrl: ru is String && ru.trim().isNotEmpty ? ru.trim() : null,
+      receiptUrl: CaseExpenseService.receiptImageUrlFrom(m),
     );
   }
 }

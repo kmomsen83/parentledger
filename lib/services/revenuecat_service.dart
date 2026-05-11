@@ -36,6 +36,14 @@ class RevenueCatService {
     );
     await Purchases.configure(PurchasesConfiguration(apiKey));
     _configured = true;
+    if (kReleaseMode &&
+        defaultTargetPlatform == TargetPlatform.iOS &&
+        apiKey.startsWith('goog_')) {
+      debugPrint(
+        '[RevenueCatService] iOS release build is using the Play default SDK key. '
+        'Set --dart-define=REVENUECAT_PUBLIC_API_KEY=appl_… for App Store.',
+      );
+    }
   }
 
   static Future<void> logIn(String appUserId) async {

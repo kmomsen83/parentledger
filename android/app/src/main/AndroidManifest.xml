@@ -48,6 +48,15 @@
                     android:host="parentledger.org"
                     android:pathPrefix="/invite" />
             </intent-filter>
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="https"
+                    android:host="www.parentledger.org"
+                    android:pathPrefix="/invite" />
+            </intent-filter>
             <!-- Firebase Dynamic Links short URLs (page.link) -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />

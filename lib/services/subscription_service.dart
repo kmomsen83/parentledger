@@ -20,6 +20,11 @@ enum AppAccessLevel {
 /// - Does **not** infer access from purchase history — only [EntitlementInfo.isActive].
 /// - Cancellation / expiry: when the entitlement becomes inactive, [accessLevel]
 ///   returns [AppAccessLevel.free] automatically on the next refresh or listener event.
+///
+/// **Role-aware product gates** (parent vs attorney, free vs pro) live in
+/// [EntitlementManager] + [CaseContext.hasFullAccess] / [CaseContext.unlockedParentPremiumFeatures].
+/// Attorneys do not rely on RevenueCat; [CaseContext.refreshPremiumStatus] skips the network
+/// for counsel accounts.
 class SubscriptionService extends ChangeNotifier {
   SubscriptionService();
 
@@ -63,25 +68,38 @@ class SubscriptionService extends ChangeNotifier {
     }
   }
 
+  /// Network refresh with short backoff (poor connectivity / store latency).
   Future<void> refresh() async {
-    try {
-      final info = await Purchases.getCustomerInfo();
-      _lastRemoteRefreshAt = DateTime.now();
-      _applyCustomerInfo(info, source: 'refresh');
-      await _persistFromCurrentState();
-    } catch (e, st) {
-      if (kDebugMode) {
-        debugPrint(
-          '[SubscriptionService] refresh failed → using cache if present ($e)\n$st',
-        );
+    Object? lastError;
+    StackTrace? lastStack;
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        await Future<void>.delayed(Duration(milliseconds: 400 * attempt));
       }
+      try {
+        final info = await Purchases.getCustomerInfo();
+        _lastRemoteRefreshAt = DateTime.now();
+        _applyCustomerInfo(info, source: 'refresh');
+        await _persistFromCurrentState();
+        return;
+      } catch (e, st) {
+        lastError = e;
+        lastStack = st;
+      }
+    }
+    if (kDebugMode) {
+      debugPrint(
+        '[SubscriptionService] refresh failed after retries → cache ($lastError)\n$lastStack',
+      );
+    }
+    if (lastError != null && lastStack != null) {
       await CrashlyticsService.recordError(
-        e,
-        st,
+        lastError,
+        lastStack,
         reason: 'SubscriptionService.refresh',
       );
-      await _restoreFromCache();
     }
+    await _restoreFromCache();
   }
 
   void _onCustomerInfoUpdate(CustomerInfo info) {

@@ -111,9 +111,10 @@ class _TimelineViolationsScreenState extends State<TimelineViolationsScreen> {
             ),
             TextButton(
               onPressed: () async {
+                final messenger = ScaffoldMessenger.of(context);
                 await _markEvidence();
                 if (!mounted) return;
-                ScaffoldMessenger.of(context).showSnackBar(
+                messenger.showSnackBar(
                   const SnackBar(
                     content: Text('Marked as evidence'),
                     behavior: SnackBarBehavior.floating,

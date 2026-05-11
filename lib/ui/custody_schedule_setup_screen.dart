@@ -45,7 +45,7 @@ color: Colors.white,
 borderRadius: BorderRadius.circular(22),
 boxShadow: [
 BoxShadow(
-color: Colors.black.withOpacity(.05),
+color: Colors.black.withValues(alpha:.05),
 blurRadius: 12,
 )
 ],
@@ -69,7 +69,7 @@ margin: const EdgeInsets.only(bottom: 8),
 padding: const EdgeInsets.all(14),
 decoration: BoxDecoration(
 color: active
-? Colors.deepPurple.withOpacity(.08)
+? Colors.deepPurple.withValues(alpha:.08)
 : Colors.grey.shade100,
 borderRadius: BorderRadius.circular(14),
 border: Border.all(

@@ -30,7 +30,7 @@ Container(
 height: 44,
 width: 44,
 decoration: BoxDecoration(
-color: color.withOpacity(.15),
+color: color.withValues(alpha:.15),
 borderRadius: BorderRadius.circular(12),
 ),
 child: Icon(icon, color: color),

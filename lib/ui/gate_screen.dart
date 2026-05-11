@@ -38,7 +38,8 @@ class _GateScreenState extends State<GateScreen> {
       if (!mounted) return;
 
       setState(() {
-        isPremium = session.isPremium;
+        // Attorneys bypass the parent subscription gate entirely.
+        isPremium = session.isAttorney || session.hasFullAccess;
         loading = false;
       });
     } catch (_) {

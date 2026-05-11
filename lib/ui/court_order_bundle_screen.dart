@@ -78,7 +78,7 @@ Container(
 padding: const EdgeInsets.symmetric(
 horizontal: 12, vertical: 6),
 decoration: BoxDecoration(
-color: statusColor(c["status"]).withOpacity(.15),
+color: statusColor(c["status"]).withValues(alpha:.15),
 borderRadius: BorderRadius.circular(20),
 ),
 child: Text(

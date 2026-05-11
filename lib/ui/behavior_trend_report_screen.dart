@@ -39,7 +39,7 @@ color: Colors.white,
 borderRadius: BorderRadius.circular(22),
 boxShadow: [
 BoxShadow(
-color: Colors.black.withOpacity(.05),
+color: Colors.black.withValues(alpha:.05),
 blurRadius: 14,
 offset: const Offset(0,6),
 )
@@ -134,7 +134,7 @@ color: Colors.white,
 borderRadius: BorderRadius.circular(18),
 boxShadow: [
 BoxShadow(
-color: Colors.black.withOpacity(.05),
+color: Colors.black.withValues(alpha:.05),
 blurRadius: 14,
 offset: const Offset(0,6),
 )
@@ -219,7 +219,7 @@ color: Colors.white,
 borderRadius: BorderRadius.circular(18),
 boxShadow: [
 BoxShadow(
-color: Colors.black.withOpacity(.04),
+color: Colors.black.withValues(alpha:.04),
 blurRadius: 12,
 offset: const Offset(0,6),
 )

@@ -87,6 +87,32 @@ class CaseMessagingService {
   static Future<void> ensureDefaultConversation(String caseId) =>
       ensureCaseThreads(caseId);
 
+  /// Ephemeral typing indicator on the conversation envelope (Firestore rules allow
+  /// `typingUserId` + `typingUpdatedAt` merges).
+  static Future<void> updateTypingState({
+    required String caseId,
+    required String conversationId,
+    required bool isTyping,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+    if (await UserRoleService.currentRole() == UserRole.attorney) return;
+
+    await conversationRef(caseId, conversationId).set(
+      <String, dynamic>{
+        if (isTyping) ...<String, dynamic>{
+          'typingUserId': user.uid,
+          'typingUpdatedAt': FieldValue.serverTimestamp(),
+        },
+        if (!isTyping) ...<String, dynamic>{
+          'typingUserId': null,
+          'typingUpdatedAt': FieldValue.serverTimestamp(),
+        },
+      },
+      SetOptions(merge: true),
+    );
+  }
+
   static CollectionReference<Map<String, dynamic>> messagesRef(
     String caseId,
     String conversationId,

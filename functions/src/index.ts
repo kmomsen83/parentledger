@@ -2,6 +2,7 @@
  * Server-side validation and transactions for critical co-parent flows.
  * Clients should call these callables instead of writing sensitive paths directly.
  */
+import { db } from "./firebase_init";
 import * as admin from "firebase-admin";
 import { randomUUID } from "node:crypto";
 import sgMail from "@sendgrid/mail";
@@ -9,6 +10,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { setGlobalOptions } from "firebase-functions/v2/options";
 import { onSchedule } from "firebase-functions/v2/scheduler";
+import { onDocumentCreated } from "firebase-functions/v2/firestore";
 
 import { requireAuthUid } from "./callable_auth";
 import {
@@ -28,11 +30,13 @@ export {
   generateCourtSummary,
 } from "./gemini_ai";
 export { smartAssistant } from "./smart_assistant";
+export { revenueCatWebhook } from "./revenuecat_webhook";
+export {
+  applyCounselSubscriptionDefaults,
+  markParentContinueFree,
+} from "./billing_callables";
 
 setGlobalOptions({ region: "us-central1", maxInstances: 10 });
-
-admin.initializeApp();
-const db = admin.firestore();
 
 const MEMBER_IDS = "memberIds";
 /** Must stay aligned with `lib/util/subscription_limits.dart` (freeMaxExpenses). */
@@ -686,12 +690,24 @@ export const completeAttorneyOnboarding = onCall(async (request) => {
 
   const userRef = db.collection("users").doc(uid);
   const snap = await userRef.get();
-  const role = String((snap.data() as Record<string, unknown> | undefined)?.["role"] ?? "")
+  const ud = snap.data() as Record<string, unknown> | undefined;
+  const role = String(ud?.["role"] ?? "")
     .trim()
     .toLowerCase();
-  if (role !== "attorney") {
+  const accountType = String(ud?.["accountType"] ?? "")
+    .trim()
+    .toLowerCase();
+  if (role !== "attorney" && accountType !== "attorney") {
     throw new HttpsError("failed-precondition", "Account must be set to attorney before completing this step.");
   }
+
+  const attorneyEmail = trimMax(String(request.data?.attorneyEmail ?? ""), 160);
+  const phone = trimMax(String(request.data?.phone ?? ""), 40);
+  const officeAddress = trimMax(String(request.data?.officeAddress ?? ""), 400);
+  const website = trimMax(String(request.data?.website ?? ""), 400);
+  const attorneyBio = trimMax(String(request.data?.attorneyBio ?? ""), 4000);
+  const jurisdiction = trimMax(String(request.data?.jurisdiction ?? ""), 120);
+  const profilePhotoUrl = trimMax(String(request.data?.profilePhotoUrl ?? ""), 2048);
 
   await userRef.set(
     {
@@ -699,8 +715,26 @@ export const completeAttorneyOnboarding = onCall(async (request) => {
       lastName,
       firmName: firmName || null,
       barNumber: barNumber || null,
+      attorneyEmail: attorneyEmail || null,
+      phone: phone || null,
+      officeAddress: officeAddress || null,
+      website: website || null,
+      attorneyBio: attorneyBio || null,
+      jurisdiction: jurisdiction || null,
+      ...(profilePhotoUrl ? { profilePhotoUrl, photoUrl: profilePhotoUrl } : {}),
       onboardingStep: "onboarding_complete",
       role: "attorney",
+      accountType: "attorney",
+      subscriptionTier: "attorney_pro",
+      entitlementFlags: {
+        counselWorkspace: true,
+        messagingFull: true,
+        exportsFull: true,
+        reportsFull: true,
+        aiToolsFull: true,
+        timelineHistoryFull: true,
+      },
+      updatedAt: FieldValue.serverTimestamp(),
     },
     { merge: true }
   );
@@ -723,6 +757,10 @@ export const ensureUserBootstrap = onCall(async (request) => {
       isPremium: false,
       accessLevel: "free",
       subscriptionTier: "free",
+      subscriptionStatus: "none",
+      freeTrialUsed: false,
+      accountType: "parent",
+      role: "parent",
     });
   });
   return { ok: true };
@@ -756,7 +794,13 @@ export const createCaseExpense = onCall(async (request) => {
 
   const userSnap = await db.collection("users").doc(uid).get();
   const ud = userSnap.data() as Record<string, unknown> | undefined;
+  const role = String(ud?.["role"] ?? "parent").trim().toLowerCase();
+  const tier = String(ud?.["subscriptionTier"] ?? "free").trim().toLowerCase();
+  const attorneyOrCounselTier = role === "attorney" || tier === "attorney_pro";
   const fullAccess =
+    attorneyOrCounselTier ||
+    tier === "parent_pro" ||
+    tier === "pro" ||
     ud?.isPremium === true ||
     ud?.accessLevel === "lifetime" ||
     ud?.accessLevel === "subscription";
@@ -915,15 +959,29 @@ export const createCaseInvite = onCall(async (request) => {
   }
 
   const inviteRef = db.collection("caseInvites").doc();
-  const lifecycleRef = db.collection("invites").doc(inviteRef.id);
+  const inviteId = inviteRef.id;
+  const lifecycleRef = db.collection("invites").doc(inviteId);
   const roleValue = role || "coparent";
   const intendedRecipient = {
     userId: intendedRecipientUserId || null,
     email: intendedRecipientEmail || null,
     phone: intendedRecipientPhone || null,
   };
+  const expiresAtTs = admin.firestore.Timestamp.fromDate(
+    new Date(Date.now() + 1000 * 60 * 60 * 24 * 30)
+  );
+  const origin = "https://parentledger.org";
+  const universalLink =
+    roleValue === "attorney"
+      ? `${origin}/invite/attorney/${inviteId}`
+      : `${origin}/invite/${inviteId}`;
+  const deepLink =
+    roleValue === "attorney"
+      ? `parentledger://invite/attorney/${inviteId}`
+      : `parentledger://invite/${inviteId}`;
+
   await inviteRef.set({
-    inviteId: inviteRef.id,
+    inviteId,
     fromUserId: uid,
     caseId,
     toPhone,
@@ -934,16 +992,20 @@ export const createCaseInvite = onCall(async (request) => {
     openedAt: null,
     acceptedAt: null,
     expiredAt: null,
-    expiresAt: admin.firestore.Timestamp.fromDate(
-      new Date(Date.now() + 1000 * 60 * 60 * 24 * 30)
-    ),
+    expiresAt: expiresAtTs,
     createdAt: FieldValue.serverTimestamp(),
   });
   await lifecycleRef.set(
     {
-      inviteId: inviteRef.id,
-      caseId,
+      inviteId,
+      token: inviteId,
+      inviteType: roleValue === "attorney" ? "attorney" : "coparent",
+      createdByUid: uid,
       fromUserId: uid,
+      targetEmail: intendedRecipientEmail || null,
+      parentCaseId: caseId,
+      attorneyCaseId: roleValue === "attorney" ? caseId : null,
+      caseId,
       role: roleValue,
       intendedRecipient,
       status: "pending",
@@ -952,12 +1014,16 @@ export const createCaseInvite = onCall(async (request) => {
       acceptedAt: null,
       expiredAt: null,
       failedAttempts: 0,
+      deepLink,
+      universalLink,
+      expiresAt: expiresAtTs,
+      acceptedByUid: null,
     },
     { merge: true }
   );
   await db.collection("inviteLogs").add({
     event: "invite_created",
-    inviteId: inviteRef.id,
+    inviteId,
     uid,
     ip,
     timestamp: FieldValue.serverTimestamp(),
@@ -971,30 +1037,21 @@ export const createCaseInvite = onCall(async (request) => {
       title: "Invite sent",
       description:
         roleValue === "attorney"
-          ? `Attorney invite created (${inviteRef.id}).`
-          : `Co-parent invite created (${inviteRef.id}).`,
-      data: { inviteId: inviteRef.id, role: roleValue },
+          ? `Attorney invite created (${inviteId}).`
+          : `Co-parent invite created (${inviteId}).`,
+      data: { inviteId, role: roleValue },
     });
   } catch (e) {
     console.error("case_events invite_sent", e);
   }
 
-  const inviteId = inviteRef.id;
-  const origin = "https://parentledger.org";
-  const universalLink =
-    roleValue === "attorney"
-      ? `${origin}/invite/attorney/${inviteId}`
-      : `${origin}/invite/${inviteId}`;
-  const deepLink =
-    roleValue === "attorney"
-      ? `parentledger://invite/attorney/${inviteId}`
-      : `parentledger://invite/${inviteId}`;
-
   return {
+    success: true,
     inviteId,
     token: inviteId,
     universalLink,
     deepLink,
+    expiresAt: expiresAtTs.toDate().toISOString(),
   };
 });
 
@@ -1288,12 +1345,23 @@ async function transactionAcceptLegacyCaseInviteToken(
     );
 
     const nextUses = uses + 1;
+    const accepted = nextUses >= maxUses;
     tx.set(
       inviteRef,
       {
         uses: nextUses,
-        status: nextUses >= maxUses ? "accepted" : "pending",
+        status: accepted ? "accepted" : "pending",
         acceptedBy: uid,
+        acceptedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+    tx.set(
+      db.collection("invites").doc(inviteRef.id),
+      {
+        uses: nextUses,
+        status: accepted ? "accepted" : "pending",
+        acceptedByUid: uid,
         acceptedAt: FieldValue.serverTimestamp(),
       },
       { merge: true }
@@ -1449,6 +1517,17 @@ async function transactionAcceptCoparentFirestoreInvite(
       { merge: true }
     );
 
+    tx.set(
+      db.collection("invites").doc(inviteRef.id),
+      {
+        status: "accepted",
+        acceptedByUid: uid,
+        acceptedAt: FieldValue.serverTimestamp(),
+        used: true,
+      },
+      { merge: true }
+    );
+
     return { caseId, role, alreadyMember: false };
   });
 }
@@ -1535,6 +1614,15 @@ export const declineCoparentInvite = onCall(async (request) => {
     },
     { merge: true }
   );
+  await db.collection("invites").doc(token).set(
+    {
+      status: "declined",
+      recipientStatus: "declined",
+      declinedAt: FieldValue.serverTimestamp(),
+      declinedByUid: uid,
+    },
+    { merge: true }
+  );
   return { ok: true };
 });
 
@@ -1577,6 +1665,15 @@ export const cleanupExpiredInvites = onSchedule("every 24 hours", async () => {
   for (const doc of staleCoparent.docs) {
     batch2.set(
       doc.ref,
+      {
+        status: "expired",
+        recipientStatus: "expired",
+        expiredAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+    batch2.set(
+      db.collection("invites").doc(doc.id),
       {
         status: "expired",
         recipientStatus: "expired",
@@ -1843,7 +1940,16 @@ export const createCoparentInviteCode = onCall(async (request) => {
   }
 
   const expiresAt = admin.firestore.Timestamp.fromMillis(Date.now() + COPARENT_INVITE_TTL_MS);
-  await ref.set({
+  const universalLink = `https://parentledger.org/invite/${token}`;
+  const deepLink = `parentledger://invite/${token}`;
+  const intendedRecipient = {
+    userId: null,
+    email: null,
+    phone: null,
+  };
+
+  const batch = db.batch();
+  batch.set(ref, {
     caseId,
     workspaceId: caseId,
     senderUid: uid,
@@ -1858,9 +1964,33 @@ export const createCoparentInviteCode = onCall(async (request) => {
     used: false,
     permissions: DEFAULT_COPARENT_INVITE_PERMISSIONS,
   });
+  batch.set(
+    db.collection("invites").doc(token),
+    {
+      inviteId: token,
+      token,
+      inviteType: "coparent",
+      createdByUid: uid,
+      fromUserId: uid,
+      targetEmail: null,
+      parentCaseId: caseId,
+      attorneyCaseId: null,
+      caseId,
+      intendedRecipient,
+      senderUid: uid,
+      status: "pending",
+      recipientStatus: "pending",
+      createdAt: FieldValue.serverTimestamp(),
+      expiresAt,
+      deepLink,
+      universalLink,
+      acceptedByUid: null,
+      used: false,
+    },
+    { merge: true }
+  );
+  await batch.commit();
 
-  const universalLink = `https://parentledger.org/invite/${token}`;
-  const deepLink = `parentledger://invite/${token}`;
   inviteStructuredLog("coparent_invite_created", {
     caseId,
     tokenPrefix: token.slice(0, 8),
@@ -1889,6 +2019,8 @@ export const createCoparentInviteCode = onCall(async (request) => {
   }
 
   return {
+    success: true,
+    inviteId: token,
     token,
     universalLink,
     deepLink,
@@ -2335,3 +2467,73 @@ export const revokeAttorneyCaseAccess = onCall(async (request) => {
 
   return { ok: true };
 });
+
+/** Push notification to co-parents when a new case thread message is created. */
+export const onCaseConversationMessageCreatedSendPush = onDocumentCreated(
+  {
+    document: "cases/{caseId}/conversations/{conversationId}/messages/{messageId}",
+    region: "us-central1",
+  },
+  async (event) => {
+    const snap = event.data;
+    if (!snap?.exists) {
+      return;
+    }
+    const data = snap.data() as Record<string, unknown>;
+    const senderId = String(data["senderId"] ?? "").trim();
+    const text = String(data["text"] ?? "").trim();
+    const preview =
+      text.length > 140 ? `${text.slice(0, 140)}…` : text || "New message";
+    const caseId = String(event.params["caseId"] ?? "").trim();
+    const conversationId = String(event.params["conversationId"] ?? "").trim();
+    if (!caseId || !senderId) {
+      return;
+    }
+
+    const caseSnap = await db.collection("cases").doc(caseId).get();
+    if (!caseSnap.exists) {
+      return;
+    }
+    const memberIds = (caseSnap.data()?.["memberIds"] as unknown[]) ?? [];
+    const recipients = memberIds
+      .map((x) => String(x ?? "").trim())
+      .filter((uid) => uid.length > 0 && uid !== senderId);
+
+    const tokens = new Set<string>();
+    for (const uid of recipients) {
+      const uSnap = await db.collection("users").doc(uid).get();
+      const list = uSnap.data()?.["fcmTokens"] as unknown;
+      if (Array.isArray(list)) {
+        for (const t of list) {
+          const s = String(t ?? "").trim();
+          if (s.length > 10 && s.length < 512) {
+            tokens.add(s);
+          }
+        }
+      }
+    }
+
+    if (tokens.size === 0) {
+      return;
+    }
+
+    const tokenArr = Array.from(tokens).slice(0, 500);
+    const messaging = admin.messaging();
+    try {
+      await messaging.sendEachForMulticast({
+        tokens: tokenArr,
+        notification: {
+          title: "ParentLedger",
+          body: preview,
+        },
+        data: {
+          caseId,
+          conversationId,
+          type: "case_message",
+        },
+      });
+    } catch (e) {
+      console.error("onCaseConversationMessageCreatedSendPush", e);
+    }
+  }
+);

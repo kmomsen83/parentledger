@@ -14,10 +14,8 @@ height: 82,
 decoration: BoxDecoration(
 borderRadius: BorderRadius.circular(22),
 boxShadow: [
-
-/// ⭐ OUTER BLUE GLOW
 BoxShadow(
-color: Colors.blueAccent.withOpacity(.25),
+color: Colors.blueAccent.withValues(alpha:.25),
 blurRadius: 30,
 spreadRadius: 1,
 ),
@@ -29,10 +27,10 @@ child: BackdropFilter(
 filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
 child: Container(
 decoration: BoxDecoration(
-color: Colors.white.withOpacity(.10),
+color: Colors.white.withValues(alpha:.10),
 borderRadius: BorderRadius.circular(22),
 border: Border.all(
-color: Colors.white.withOpacity(.25),
+color: Colors.white.withValues(alpha:.25),
 width: 1.2,
 ),
 ),

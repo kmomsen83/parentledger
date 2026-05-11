@@ -17,6 +17,18 @@ class CaseExpenseService {
   static CollectionReference<Map<String, dynamic>> expensesCol(String caseId) =>
       _db.collection('cases').doc(caseId).collection('expenses');
 
+  /// HTTPS receipt image URL from expense document (supports legacy field names).
+  static String? receiptImageUrlFrom(Map<String, dynamic> data) {
+    for (final key in ['receiptUrl', 'receiptImageUrl', 'photoUrl']) {
+      final raw = data[key];
+      if (raw == null) continue;
+      final s = raw.toString().trim();
+      if (s.isEmpty) continue;
+      if (s.startsWith('https://') || s.startsWith('http://')) return s;
+    }
+    return null;
+  }
+
   /// Count of expense documents (for free-tier enforcement).
   static Future<int> expenseDocumentCount(String caseId) async {
     final agg = await expensesCol(caseId).count().get();

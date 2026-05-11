@@ -7,6 +7,7 @@ import 'package:parentledger/l10n/context_l10n.dart';
 import '../design/design.dart';
 import '../models/child_model.dart';
 import '../onboarding/onboarding_steps.dart';
+import '../services/child_private_photo_service.dart';
 import '../services/child_service.dart';
 
 /// Circular child avatar: [NetworkImage] when [imageUrl] is non-empty, else [Icons.child_care].
@@ -72,6 +73,9 @@ class ChildListItem extends StatelessWidget {
     required this.onTapEdit,
     required this.onDelete,
     this.deleting = false,
+
+    /// Owner-only private photo (not read from shared case `photoUrl`).
+    this.displayPhotoUrl,
   });
 
   final ChildModel child;
@@ -79,6 +83,7 @@ class ChildListItem extends StatelessWidget {
   final VoidCallback onTapEdit;
   final VoidCallback onDelete;
   final bool deleting;
+  final String? displayPhotoUrl;
 
   static const BorderRadius _radius = BorderRadius.all(Radius.circular(16));
 
@@ -101,11 +106,12 @@ class ChildListItem extends StatelessWidget {
             child: InkWell(
               onTap: onTapEdit,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    buildChildAvatar(child.photoUrl, radius: 26),
+                    buildChildAvatar(displayPhotoUrl, radius: 26),
                     const SizedBox(width: 14),
                     Expanded(
                       child: Column(
@@ -161,15 +167,13 @@ class ChildListItem extends StatelessWidget {
 
     return KeyedSubtree(
       key: ValueKey<String>(child.id),
-      child: card
-          .animate()
-          .fadeIn(duration: 220.ms, curve: Curves.easeOut)
-          .slideY(
-            begin: 0.05,
-            end: 0,
-            duration: 220.ms,
-            curve: Curves.easeOutCubic,
-          ),
+      child:
+          card.animate().fadeIn(duration: 220.ms, curve: Curves.easeOut).slideY(
+                begin: 0.05,
+                end: 0,
+                duration: 220.ms,
+                curve: Curves.easeOutCubic,
+              ),
     );
   }
 }
@@ -201,8 +205,10 @@ class _ChildrenListScreenState extends State<ChildrenListScreen> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    final doc =
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    final doc = await FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .get();
 
     if (!mounted) return;
     setState(() {
@@ -220,8 +226,7 @@ class _ChildrenListScreenState extends State<ChildrenListScreen> {
       hintStyle: TextStyle(color: Colors.white.withValues(alpha: 0.45)),
       filled: true,
       fillColor: PLDesign.surface,
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide(color: PLDesign.border),
@@ -332,6 +337,10 @@ class _ChildrenListScreenState extends State<ChildrenListScreen> {
     setState(() => _deletingChildId = childId);
     try {
       await ChildService.deleteChild(caseId: cid, childId: childId);
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      if (uid != null) {
+        await ChildPrivatePhotoService.deleteAllForChild(childId);
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('$name removed')),
@@ -371,7 +380,10 @@ class _ChildrenListScreenState extends State<ChildrenListScreen> {
         return;
       }
 
-      await FirebaseFirestore.instance.collection('users').doc(user.uid).update({
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .update({
         'onboardingStep': OnboardingSteps.childrenAdded,
       });
     } catch (_) {
@@ -494,100 +506,127 @@ class _ChildrenListScreenState extends State<ChildrenListScreen> {
                   Expanded(
                     child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
                       stream: FirebaseFirestore.instance
-                          .collection('cases')
-                          .doc(_caseId)
-                          .collection('children')
-                          .orderBy('createdAt', descending: true)
+                          .collection('users')
+                          .doc(FirebaseAuth.instance.currentUser!.uid)
+                          .collection('childPrivate')
                           .snapshots(),
-                      builder: (context, snap) {
-                        if (!snap.hasData) {
-                          return const Center(
-                            child: CircularProgressIndicator(),
-                          );
+                      builder: (context, privSnap) {
+                        final privatePrimary = <String, String>{};
+                        if (privSnap.hasData) {
+                          for (final d in privSnap.data!.docs) {
+                            final urls = d.data()['photoUrls'];
+                            if (urls is List && urls.isNotEmpty) {
+                              final u = urls.first.toString().trim();
+                              if (u.isNotEmpty) {
+                                privatePrimary[d.id] = u;
+                              }
+                            }
+                          }
                         }
-                        final docs = snap.data!.docs;
-                        final hasChildren = docs.isNotEmpty;
 
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Expanded(
-                              child: docs.isEmpty
-                                  ? const _EmptyChildrenHint()
-                                  : ListView.separated(
-                                      padding: const EdgeInsets.only(bottom: 8),
-                                      itemCount: docs.length,
-                                      separatorBuilder: (_, __) =>
-                                          const SizedBox(height: 12),
-                                      itemBuilder: (context, i) {
-                                        final doc = docs[i];
-                                        final data = doc.data();
-                                        final child = ChildModel.fromMap(
-                                          doc.id,
-                                          data,
-                                          caseId: _caseId,
-                                        );
-                                        final name =
-                                            data['name']?.toString() ??
-                                                child.name;
-                                        final toEdit =
-                                            child.copyWith(name: name);
-                                        final busy = _deletingChildId == doc.id;
+                        return StreamBuilder<
+                            QuerySnapshot<Map<String, dynamic>>>(
+                          stream: FirebaseFirestore.instance
+                              .collection('cases')
+                              .doc(_caseId)
+                              .collection('children')
+                              .orderBy('createdAt', descending: true)
+                              .snapshots(),
+                          builder: (context, snap) {
+                            if (!snap.hasData) {
+                              return const Center(
+                                child: CircularProgressIndicator(),
+                              );
+                            }
+                            final docs = snap.data!.docs;
+                            final hasChildren = docs.isNotEmpty;
 
-                                        return ChildListItem(
-                                          child: toEdit,
-                                          ageLabel: _ageLabel(child, data),
-                                          deleting: busy,
-                                          onTapEdit: () {
-                                            Navigator.pushNamed(
-                                              context,
-                                              '/editChild',
-                                              arguments: toEdit,
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Expanded(
+                                  child: docs.isEmpty
+                                      ? const _EmptyChildrenHint()
+                                      : ListView.separated(
+                                          padding:
+                                              const EdgeInsets.only(bottom: 8),
+                                          itemCount: docs.length,
+                                          separatorBuilder: (_, __) =>
+                                              const SizedBox(height: 12),
+                                          itemBuilder: (context, i) {
+                                            final doc = docs[i];
+                                            final data = doc.data();
+                                            final child = ChildModel.fromMap(
+                                              doc.id,
+                                              data,
+                                              caseId: _caseId,
+                                            );
+                                            final name =
+                                                data['name']?.toString() ??
+                                                    child.name;
+                                            final toEdit =
+                                                child.copyWith(name: name);
+                                            final busy =
+                                                _deletingChildId == doc.id;
+
+                                            return ChildListItem(
+                                              child: toEdit,
+                                              displayPhotoUrl:
+                                                  privatePrimary[doc.id],
+                                              ageLabel: _ageLabel(child, data),
+                                              deleting: busy,
+                                              onTapEdit: () {
+                                                Navigator.pushNamed(
+                                                  context,
+                                                  '/editChild',
+                                                  arguments: toEdit,
+                                                );
+                                              },
+                                              onDelete: () =>
+                                                  _confirmDeleteChild(
+                                                childId: doc.id,
+                                                name: name.isNotEmpty
+                                                    ? name
+                                                    : 'Child',
+                                              ),
                                             );
                                           },
-                                          onDelete: () =>
-                                              _confirmDeleteChild(
-                                            childId: doc.id,
-                                            name: name.isNotEmpty
-                                                ? name
-                                                : 'Child',
-                                          ),
-                                        );
-                                      },
-                                    ),
-                            ),
-                            const SizedBox(height: 12),
-                            FilledButton(
-                              onPressed: _continuing || !hasChildren
-                                  ? null
-                                  : _continueFlow,
-                              style: FilledButton.styleFrom(
-                                minimumSize: const Size.fromHeight(54),
-                                backgroundColor: PLDesign.primary,
-                                disabledBackgroundColor: PLDesign.primary
-                                    .withValues(alpha: 0.35),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
+                                        ),
                                 ),
-                              ),
-                              child: _continuing
-                                  ? const SizedBox(
-                                      height: 22,
-                                      width: 22,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : const Text(
-                                      'Continue',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 16,
-                                      ),
+                                const SizedBox(height: 12),
+                                FilledButton(
+                                  onPressed: _continuing || !hasChildren
+                                      ? null
+                                      : _continueFlow,
+                                  style: FilledButton.styleFrom(
+                                    minimumSize: const Size.fromHeight(54),
+                                    backgroundColor: PLDesign.primary,
+                                    disabledBackgroundColor: PLDesign.primary
+                                        .withValues(alpha: 0.35),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(16),
                                     ),
-                            ),
-                          ],
+                                  ),
+                                  child: _continuing
+                                      ? const SizedBox(
+                                          height: 22,
+                                          width: 22,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : const Text(
+                                          'Continue',
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 16,
+                                          ),
+                                        ),
+                                ),
+                              ],
+                            );
+                          },
                         );
                       },
                     ),

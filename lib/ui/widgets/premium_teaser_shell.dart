@@ -3,13 +3,14 @@ import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 
 import '../../design/design.dart';
+import 'dashboard/dashboard_badge.dart';
 
 /// Tiny non-interactive lock + Pro pill for corners (dashboard tiles, limited surfaces).
 class ProCornerLockBadge extends StatelessWidget {
   const ProCornerLockBadge({
     super.key,
-    this.top = 8,
-    this.right = 8,
+    this.top = 6,
+    this.right = 6,
   });
 
   final double top;
@@ -20,47 +21,17 @@ class ProCornerLockBadge extends StatelessWidget {
     return Positioned(
       top: top,
       right: right,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(999),
-          color: Colors.black.withValues(alpha: 0.38),
-          border: Border.all(
-            color: PLDesign.premiumGold.withValues(alpha: 0.35),
-            width: 0.75,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.lock_outline_rounded,
-              size: 11,
-              color: PLDesign.premiumGold.withValues(alpha: 0.95),
-            ),
-            const SizedBox(width: 4),
-            Text(
-              'Pro',
-              style: PLDesign.caption.copyWith(
-                color: PLDesign.premiumChampagne,
-                fontWeight: FontWeight.w700,
-                fontSize: 10.5,
-                letterSpacing: 0.35,
-              ),
-            ),
-          ],
-        ),
-      ),
+      child: const DashboardBadge(DashboardBadgeKind.pro),
     );
   }
 }
 
-/// Corner pill for calendar / read-mostly surfaces (free tier) — matches [ProCornerLockBadge] styling.
+/// Corner pill for calendar / read-mostly surfaces (free tier) — matches [DashboardBadge].
 class LimitedCornerBadge extends StatelessWidget {
   const LimitedCornerBadge({
     super.key,
-    this.top = 7,
-    this.right = 7,
+    this.top = 6,
+    this.right = 6,
   });
 
   final double top;
@@ -71,27 +42,7 @@ class LimitedCornerBadge extends StatelessWidget {
     return Positioned(
       top: top,
       right: right,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(999),
-          color: Colors.black.withValues(alpha: 0.38),
-          border: Border.all(
-            color: PLDesign.premiumGold.withValues(alpha: 0.35),
-            width: 0.75,
-          ),
-        ),
-        child: Text(
-          'Limited',
-          style: PLDesign.caption.copyWith(
-            color: PLDesign.premiumChampagne,
-            fontWeight: FontWeight.w700,
-            fontSize: 9.5,
-            letterSpacing: 0.2,
-            height: 1,
-          ),
-        ),
-      ),
+      child: const DashboardBadge(DashboardBadgeKind.limited),
     );
   }
 }
@@ -148,7 +99,7 @@ class PremiumTeaserShell extends StatelessWidget {
               ),
             ),
           ),
-          if (showProBadge) ProCornerLockBadge(top: 10, right: 10),
+          if (showProBadge) const ProCornerLockBadge(),
         ],
       ),
     );

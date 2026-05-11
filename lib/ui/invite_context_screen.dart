@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../design/design.dart';
+import '../design/pl_premium_components.dart';
 import '../onboarding/onboarding_steps.dart';
 
 /// Shown after accepting a co-parent invite, before create account / terms.
@@ -128,9 +129,10 @@ class _InviteContextScreenState extends State<InviteContextScreen> {
                           textAlign: TextAlign.center,
                         ),
                         const SizedBox(height: 28),
-                        PLDesign.primaryButton(
-                          label: _saving ? 'Continuing…' : 'Continue',
-                          onTap: _saving ? () {} : _continue,
+                        PLPrimaryButton(
+                          label: _saving ? 'Continuing…' : 'Continue setup',
+                          onPressed: _saving ? null : _continue,
+                          enabled: !_saving,
                         ),
                       ],
                     ),

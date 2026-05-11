@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../design/design.dart';
 import '../providers/case_context.dart';
 import '../services/case_expense_service.dart';
+import '../services/case_switcher_service.dart';
 import 'widgets/expense_receipt_fullscreen.dart';
 import 'widgets/trust_elements.dart';
 
@@ -25,6 +26,16 @@ class ApproveDenyExpenseScreen extends StatefulWidget {
 
 class _ApproveDenyExpenseScreenState extends State<ApproveDenyExpenseScreen> {
   bool _busy = false;
+
+  String? _caseIdForStream(BuildContext context) {
+    final session = context.watch<CaseContext>();
+    if (session.isAttorney) {
+      final switched =
+          context.watch<CaseSwitcherService>().selectedCaseId ?? session.caseId;
+      return switched;
+    }
+    return session.caseId;
+  }
 
   Future<void> _setStatus({
     required String caseId,
@@ -65,7 +76,7 @@ class _ApproveDenyExpenseScreenState extends State<ApproveDenyExpenseScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final caseId = context.watch<CaseContext>().caseId;
+    final caseId = _caseIdForStream(context);
     if (caseId == null) {
       return Scaffold(
         backgroundColor: PLDesign.background,
@@ -99,7 +110,7 @@ class _ApproveDenyExpenseScreenState extends State<ApproveDenyExpenseScreen> {
               : double.tryParse('$rawAmount') ?? 0.0;
           final description = (data['description'] ?? 'Expense').toString();
           final status = (data['status'] ?? 'unpaid').toString();
-          final receiptUrl = (data['receiptUrl'] ?? '').toString().trim();
+          final receiptUrl = CaseExpenseService.receiptImageUrlFrom(data);
 
           return SafeArea(
             child: Column(
@@ -140,10 +151,10 @@ class _ApproveDenyExpenseScreenState extends State<ApproveDenyExpenseScreen> {
                             ],
                           ),
                         ),
-                        if (receiptUrl.isNotEmpty) ...[
+                        if (receiptUrl != null && receiptUrl.isNotEmpty) ...[
                           const SizedBox(height: 16),
                           Text(
-                            'Receipt',
+                            'Receipt photo',
                             style: PLDesign.caption.copyWith(
                               fontWeight: FontWeight.w700,
                               color: PLDesign.textMuted,
@@ -179,6 +190,15 @@ class _ApproveDenyExpenseScreenState extends State<ApproveDenyExpenseScreen> {
                                   ),
                                 ),
                               ),
+                            ),
+                          ),
+                        ] else ...[
+                          const SizedBox(height: 16),
+                          Text(
+                            'No receipt image on file for this entry.',
+                            style: PLDesign.caption.copyWith(
+                              height: 1.35,
+                              color: PLDesign.textMuted,
                             ),
                           ),
                         ],

@@ -32,6 +32,7 @@ await Permission.microphone.request();
 
 final available = await _speech.initialize();
 
+if (!mounted) return;
 if (!available) {
 ScaffoldMessenger.of(context).showSnackBar(
 const SnackBar(

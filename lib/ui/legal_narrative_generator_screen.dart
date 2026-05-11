@@ -87,7 +87,8 @@ onTap: pickDateRange,
 /// TONE
 _card(
 child: DropdownButtonFormField<String>(
-value: tone,
+key: ValueKey<String>(tone),
+initialValue: tone,
 items: const [
 DropdownMenuItem(
 value: "neutral", child: Text("Neutral")),

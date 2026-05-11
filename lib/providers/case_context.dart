@@ -4,12 +4,15 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
+import 'package:purchases_flutter/purchases_flutter.dart';
 
 import '../models/user_role.dart';
 import '../services/firestore_fields.dart';
 import '../services/invite_service.dart';
 import '../services/revenuecat_service.dart';
 import '../services/subscription_service.dart';
+import '../services/subscription_user_firestore_sync.dart';
+import '../services/user_subscription_firestore.dart';
 import '../startup_diag.dart';
 
 /// Single source of truth for signed-in user profile, case membership,
@@ -73,8 +76,13 @@ class CaseContext extends ChangeNotifier {
 
   String get accessLevel => (_userData['accessLevel'] ?? 'free').toString();
 
+  /// Parents: lifetime / RevenueCat+server premium / Firestore `subscription` access.
+  /// Attorneys: always treated as fully entitled (no parent paywall / no store gate).
   bool get hasFullAccess =>
-      accessLevel == 'lifetime' || isPremium || accessLevel == 'subscription';
+      isAttorney ||
+      accessLevel == 'lifetime' ||
+      isPremium ||
+      accessLevel == 'subscription';
 
   /// Parent Pro features: exports without counsel watermark, advanced insights, etc.
   /// Attorneys always use the limited counsel experience regardless of this flag.
@@ -82,13 +90,87 @@ class CaseContext extends ChangeNotifier {
 
   String get onboardingStep => _userData['onboardingStep'] as String? ?? '';
 
+  /// Firestore `freeTrialUsed` — once true, onboarding/manage UI hides the trial path.
+  bool get freeTrialUsed => _userData['freeTrialUsed'] == true;
+
+  /// Client + server maintained: `none`, `free`, `trialing`, `active`, etc.
+  String get subscriptionStatus =>
+      (_userData['subscriptionStatus'] ?? 'none').toString();
+
+  /// Canonical profile image (falls back to legacy `photoUrl`).
+  String? get profilePhotoUrl {
+    final p = _userData['profilePhotoUrl'] ?? _userData['photoUrl'];
+    if (p is String && p.trim().isNotEmpty) return p.trim();
+    return null;
+  }
+
+  /// Mirrors `role` for analytics and rules-friendly merges.
+  String get accountType => isAttorney ? 'attorney' : 'parent';
+
+  /// Last known RevenueCat entitlement identifier written after purchase/restore.
+  String? get activeEntitlementId {
+    final v = _userData['entitlementId'];
+    if (v is String && v.trim().isNotEmpty) return v.trim();
+    return null;
+  }
+
+  /// Firestore `subscriptionTier` when present; otherwise inferred from role + access.
+  String get subscriptionTier {
+    final raw = (_userData['subscriptionTier'] as String?)?.trim();
+    if (raw != null && raw.isNotEmpty) {
+      if (raw == 'pro') return UserSubscriptionFirestore.tierParentPro;
+      return raw;
+    }
+    if (isAttorney) return UserSubscriptionFirestore.tierAttorneyPro;
+    if (unlockedParentPremiumFeatures) {
+      return UserSubscriptionFirestore.tierParentPro;
+    }
+    return UserSubscriptionFirestore.tierFree;
+  }
+
+  /// Optional server/client-maintained capability map (`users/{uid}.entitlementFlags`).
+  Map<String, dynamic> get entitlementFlags {
+    final raw = _userData['entitlementFlags'];
+    if (raw is Map<String, dynamic>) return Map<String, dynamic>.from(raw);
+    if (raw is Map) {
+      return raw.map((k, v) => MapEntry(k.toString(), v));
+    }
+    return const <String, dynamic>{};
+  }
+
   /// Optional UX copy tier: `neutral`, `professional`, or `legal` (`users/{uid}.uxTone`).
   String? get userUxTone => _userData['uxTone'] as String?;
 
-  /// `parent` (default) or `attorney` — stored on `users/{uid}.role`.
-  UserRole get userRole => UserRole.fromObject(_userData['role']);
+  /// `parent` (default) or `attorney` — see [UserRole.fromUserData].
+  UserRole get userRole => UserRole.fromUserData(_userData);
 
   bool get isAttorney => userRole.isAttorney;
+
+  /// Applies latest `users/{uid}` from Firestore (e.g. after role selection merge).
+  Future<void> refreshUserDocFromServer() async {
+    final uid = _user?.uid;
+    if (uid == null) return;
+    try {
+      final snap =
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      if (!snap.exists) {
+        _userDocExists = false;
+        _userData = {};
+        _notifyListenersAndTrackReady();
+        return;
+      }
+      _userDocExists = true;
+      _userData = Map<String, dynamic>.from(snap.data()!);
+      final nextCaseId = _userData['caseId'] as String?;
+      if (nextCaseId != caseId) {
+        caseId = nextCaseId;
+        _syncCaseListener(nextCaseId);
+      }
+      _notifyListenersAndTrackReady();
+    } catch (e) {
+      _log('[CaseContext] refreshUserDocFromServer failed: $e');
+    }
+  }
 
   /// Short given name for greetings (Firestore first, then display name, email).
   String get greetingFirstName {
@@ -280,11 +362,11 @@ class CaseContext extends ChangeNotifier {
       final fn = FirebaseFunctions.instanceFor(region: 'us-central1');
       final callable = fn.httpsCallable('ensureUserBootstrap');
       await callable.call().timeout(
-            const Duration(seconds: 20),
-            onTimeout: () {
-              throw TimeoutException('ensureUserBootstrap');
-            },
-          );
+        const Duration(seconds: 20),
+        onTimeout: () {
+          throw TimeoutException('ensureUserBootstrap');
+        },
+      );
     } catch (e) {
       _log('[CaseContext] _ensureUserDoc failed: $e');
     }
@@ -454,6 +536,17 @@ class CaseContext extends ChangeNotifier {
     } catch (e) {
       _revenueCatPremium = previousPremium;
       _log('[CaseContext] refreshPremiumStatus failed (keeping prior): $e');
+    }
+
+    if (!isAttorney && _user != null) {
+      try {
+        final info = await Purchases.getCustomerInfo();
+        await SubscriptionUserFirestoreSync
+            .syncTrialConsumptionFromCustomerInfo(
+          info,
+          existingUserData: Map<String, dynamic>.from(_userData),
+        );
+      } catch (_) {}
     }
 
     premiumLoading = false;

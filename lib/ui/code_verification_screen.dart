@@ -93,7 +93,7 @@ fit: BoxFit.cover,
 ),
 
 Positioned.fill(
-child: Container(color: Colors.black.withOpacity(.65)),
+child: Container(color: Colors.black.withValues(alpha:.65)),
 ),
 
 SafeArea(
@@ -134,10 +134,10 @@ const SizedBox(height: 40),
 /// 🔢 CODE INPUT
 Container(
 decoration: BoxDecoration(
-color: Colors.white.withOpacity(.08),
+color: Colors.white.withValues(alpha:.08),
 borderRadius: BorderRadius.circular(22),
 border: Border.all(
-color: Colors.white.withOpacity(.15),
+color: Colors.white.withValues(alpha:.15),
 ),
 ),
 child: TextField(

@@ -25,7 +25,7 @@ boxShadow: [
 
 /// ⭐ HUGE PREMIUM GLOW
 BoxShadow(
-color: const Color(0xff5ea9ff).withOpacity(.65),
+color: const Color(0xff5ea9ff).withValues(alpha: .65),
 blurRadius: 55,
 spreadRadius: 4,
 offset: const Offset(0, 20),

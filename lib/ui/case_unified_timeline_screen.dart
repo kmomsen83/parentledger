@@ -9,6 +9,7 @@ import '../design/design.dart';
 import '../models/case_event.dart';
 import '../models/timeline_event_model.dart';
 import '../providers/case_context.dart';
+import '../services/entitlement_manager.dart';
 import '../services/case_event_service.dart';
 import '../services/case_timeline_service.dart';
 import '../services/export_service.dart';
@@ -268,8 +269,8 @@ class _CaseUnifiedTimelineScreenState extends State<CaseUnifiedTimelineScreen> {
                 events = cx.isAttorney
                     ? events
                     : applyFreeTierTimelineFilter(events, context);
-                final showLimitedMessageBanner = !cx.isAttorney &&
-                    !cx.isPremium &&
+                final showLimitedMessageBanner = cx.entitlements
+                        .appliesParentFreeTierCaps &&
                     eventsBeforeMessageCap.where((e) => e.isMessageLike).length >
                         events.where((e) => e.isMessageLike).length;
                 if (events.isEmpty) {
@@ -534,6 +535,8 @@ class _CaseUnifiedTimelineScreenState extends State<CaseUnifiedTimelineScreen> {
                         onPressed: _selectedIds.isEmpty
                             ? null
                             : () async {
+                                final messenger =
+                                    ScaffoldMessenger.of(context);
                                 for (final id in _selectedIds) {
                                   await CaseTimelineService.setEvidenceFlag(
                                     caseId: widget.caseId,
@@ -542,7 +545,7 @@ class _CaseUnifiedTimelineScreenState extends State<CaseUnifiedTimelineScreen> {
                                   );
                                 }
                                 if (!mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
+                                messenger.showSnackBar(
                                   SnackBar(
                                     content: Text(
                                       _selectedIds.length == 1

@@ -10,14 +10,19 @@ class AttorneyClientCardVm {
   const AttorneyClientCardVm({
     required this.caseId,
     required this.parentNamesLabel,
+    required this.caseTitle,
     required this.isActive,
     required this.caseStatusLabel,
     required this.status,
     required this.lastActivityDisplay,
+    required this.unreadNotificationsCount,
   });
 
   final String caseId;
   final String parentNamesLabel;
+
+  /// Matter display name from `cases/{id}` (falls back if missing).
+  final String caseTitle;
 
   /// Derived from link metadata + whether both parents appear on the matter.
   final bool isActive;
@@ -26,6 +31,9 @@ class AttorneyClientCardVm {
   final String caseStatusLabel;
   final AttorneyCaseStatus status;
   final DateTime? lastActivityDisplay;
+
+  /// Unread in-app notifications tagged with this [caseId] (counsel inbox).
+  final int unreadNotificationsCount;
 }
 
 class AttorneyClientCardLoader {
@@ -46,12 +54,23 @@ class AttorneyClientCardLoader {
     return 'Parent';
   }
 
+  static String _caseTitleFromData(Map<String, dynamic>? caseData) {
+    if (caseData == null) return 'Co-parenting matter';
+    for (final key in ['caseName', 'title', 'name', 'matterTitle']) {
+      final v = (caseData[key] ?? '').toString().trim();
+      if (v.isNotEmpty) return v;
+    }
+    return 'Co-parenting matter';
+  }
+
   static Future<AttorneyClientCardVm> load({
     required String caseId,
     required Map<String, dynamic> attorneyLinkRow,
+    int unreadNotificationsCount = 0,
   }) async {
     final caseSnap = await _db.collection('cases').doc(caseId).get();
     final caseData = caseSnap.data();
+    final caseTitle = _caseTitleFromData(caseData);
 
     final status = await AttorneyCaseStatusService.compute(caseId);
 
@@ -98,21 +117,53 @@ class AttorneyClientCardLoader {
     return AttorneyClientCardVm(
       caseId: caseId,
       parentNamesLabel: parentNamesLabel,
+      caseTitle: caseTitle,
       isActive: isActive,
       caseStatusLabel: caseStatusLabel,
       status: status,
       lastActivityDisplay: status.lastActivityAt,
+      unreadNotificationsCount: unreadNotificationsCount,
     );
+  }
+
+  static Future<Map<String, int>> _unreadNotificationsByCase(
+    String attorneyUid,
+  ) async {
+    final map = <String, int>{};
+    try {
+      final snap = await _db
+          .collection('notifications')
+          .doc(attorneyUid)
+          .collection('items')
+          .where('read', isEqualTo: false)
+          .get();
+      for (final d in snap.docs) {
+        final raw = d.data()['caseId'];
+        final cid = raw == null ? '' : raw.toString().trim();
+        if (cid.isEmpty) continue;
+        map[cid] = (map[cid] ?? 0) + 1;
+      }
+    } catch (_) {
+      // Non-fatal: dashboard still lists matters without per-case unread.
+    }
+    return map;
   }
 
   static Future<List<AttorneyClientCardVm>> loadAll(
     List<QueryDocumentSnapshot<Map<String, dynamic>>> linkDocs,
+    String attorneyUid,
   ) async {
+    final unreadByCase = await _unreadNotificationsByCase(attorneyUid);
     final out = await Future.wait(
       linkDocs.map((doc) async {
         final data = doc.data();
         final caseId = (data['caseId'] ?? doc.id).toString();
-        return load(caseId: caseId, attorneyLinkRow: data);
+        final unread = unreadByCase[caseId] ?? 0;
+        return load(
+          caseId: caseId,
+          attorneyLinkRow: data,
+          unreadNotificationsCount: unread,
+        );
       }),
     );
     out.sort((a, b) {

@@ -555,8 +555,9 @@ class _SetCustodyScheduleSheetState extends State<SetCustodyScheduleSheet> {
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
+                      key: ValueKey<String>(_type),
                       decoration: _fieldDecoration('Pattern type'),
-                      value: _type,
+                      initialValue: _type,
                       items: _typeLabels.entries
                           .map(
                             (e) => DropdownMenuItem(
@@ -788,8 +789,9 @@ class _SetCustodyScheduleSheetState extends State<SetCustodyScheduleSheet> {
         ? <String>[if (value.isNotEmpty) value]
         : memberIds;
     return DropdownButtonFormField<String>(
+      key: ValueKey<String>('$label-$value-${ids.join("|")}'),
       decoration: _fieldDecoration(label),
-      value: value.isEmpty || !ids.contains(value) ? null : value,
+      initialValue: value.isEmpty || !ids.contains(value) ? null : value,
       hint: const Text('Select'),
       items: ids
           .map(

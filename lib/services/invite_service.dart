@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import 'event_logger_service.dart';
+import 'invite_callable_utils.dart';
 
 /// Paths-only invite URLs from [InviteService.createAttorneyInvite].
 class AttorneyInviteLinks {
@@ -136,23 +137,45 @@ class InviteService {
     String? intendedRecipientUserId,
   }) async {
     assert(caseId.isNotEmpty && fromUserId.isNotEmpty);
-    final callable = _functions.httpsCallable('createCaseInvite');
-    final result = await callable.call(<String, dynamic>{
-      'role': 'attorney',
-      'toPhone': '',
-      'intendedRecipientEmail': intendedRecipientEmail?.trim().toLowerCase(),
-      'intendedRecipientUserId': intendedRecipientUserId?.trim(),
-    });
-    final data = Map<String, dynamic>.from(
-      (result.data as Map?)?.cast<String, dynamic>() ??
-          const <String, dynamic>{},
+    final callable = _functions.httpsCallable(
+      'createCaseInvite',
+      options: HttpsCallableOptions(timeout: const Duration(seconds: 60)),
     );
-    final token =
-        (data['token'] ?? data['inviteId'] ?? '').toString().trim();
+    late final Map<String, dynamic> data;
+    try {
+      final result = await callable.call(<String, dynamic>{
+        'role': 'attorney',
+        'toPhone': '',
+        'intendedRecipientEmail': intendedRecipientEmail?.trim().toLowerCase(),
+        'intendedRecipientUserId': intendedRecipientUserId?.trim(),
+      });
+      data = InviteCallableUtils.normalizeData(result.data);
+    } on FirebaseFunctionsException catch (e) {
+      if (kDebugMode) {
+        debugPrint('createCaseInvite failed ${e.code} ${e.message}');
+      }
+      throw Exception(InviteCallableUtils.userMessageFor(e));
+    }
+    if (data['success'] == false) {
+      throw Exception(
+        data['message']?.toString().trim().isNotEmpty == true
+            ? data['message'].toString().trim()
+            : 'Could not create attorney invite. Please try again.',
+      );
+    }
+    final token = InviteCallableUtils.pickInviteToken(data);
     final universalLink = (data['universalLink'] ?? '').toString().trim();
     final deepLink = (data['deepLink'] ?? '').toString().trim();
-    if (token.isEmpty || universalLink.isEmpty || deepLink.isEmpty) {
-      throw Exception('Could not create attorney invite links.');
+    if (token == null ||
+        token.isEmpty ||
+        universalLink.isEmpty ||
+        deepLink.isEmpty) {
+      if (kDebugMode) {
+        debugPrint('createCaseInvite unexpected payload keys=${data.keys.toList()}');
+      }
+      throw Exception(
+        'Could not create attorney invite links. Please try again or update the app.',
+      );
     }
     final u = Uri.tryParse(universalLink);
     if (u == null || u.hasQuery) {

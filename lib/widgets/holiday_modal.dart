@@ -88,8 +88,9 @@ Future<void> showCreateHolidayDialog({
                     },
                   ),
                   DropdownButtonFormField<String>(
+                    key: ValueKey<String>(assignUid),
                     decoration: const InputDecoration(labelText: 'Assigned parent'),
-                    value: assignUid,
+                    initialValue: assignUid,
                     items: [
                       DropdownMenuItem(
                         value: rule.parentAUserId,

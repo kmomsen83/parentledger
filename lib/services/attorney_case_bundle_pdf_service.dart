@@ -11,6 +11,7 @@ import 'ai_service.dart';
 import 'case_document_service.dart';
 import 'case_event_service.dart';
 import 'case_messaging_service.dart';
+import 'attorney_pdf_branding_service.dart';
 import 'legal_case_report_pdf_service.dart';
 import 'timeline_actor_resolver.dart';
 
@@ -25,6 +26,8 @@ class AttorneyCaseBundlePdfService {
 
   static Future<Uint8List> buildPdfBytes(String caseId) async {
     await _ensureCaseEvents(caseId);
+
+    final brand = await AttorneyPdfBrandingService.loadForCurrentUser();
 
     final db = FirebaseFirestore.instance;
     final caseSnap = await db.collection('cases').doc(caseId).get();
@@ -116,6 +119,10 @@ class AttorneyCaseBundlePdfService {
               generatedAt: generatedAt,
               partiesLine: partyLineStr,
             ),
+            if (brand != null) ...[
+              pw.SizedBox(height: 8),
+              AttorneyPdfBrandingService.buildLetterhead(brand),
+            ],
             pw.SizedBox(height: 6),
             pw.Container(
               padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -131,7 +138,14 @@ class AttorneyCaseBundlePdfService {
             pw.SizedBox(height: 8),
           ],
         ),
-        footer: (ctx) => LegalCaseReportPdfService.buildFooter(ctx),
+        footer: (ctx) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+          mainAxisSize: pw.MainAxisSize.min,
+          children: [
+            if (brand != null) AttorneyPdfBrandingService.buildFooter(brand),
+            LegalCaseReportPdfService.buildFooter(ctx),
+          ],
+        ),
         build: (ctx) => [
           _pdfSectionTitle('1. Case summary (AI-assisted)'),
           pw.SizedBox(height: 6),

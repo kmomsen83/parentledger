@@ -7,7 +7,7 @@ class CustodyScheduleGenerator {
   /// 14 `'a'`/`'b'` entries for a standard 2-2-5-5 cycle starting Monday (aligned with [_twoTwoFiveFive]).
   static List<String> preset2255CycleTags({required bool parentAStartsCycle}) {
     return List<String>.generate(14, (i) {
-      final isA = _2255ParentA[i];
+      final isA = pattern2255ParentA[i];
       final effective = parentAStartsCycle ? isA : !isA;
       return effective ? 'a' : 'b';
     });
@@ -105,7 +105,7 @@ class CustodyScheduleGenerator {
   }
 
   /// Standard 14-day 2-2-5-5 pattern (Mon→next Sun).
-  static const List<bool> _2255ParentA = [
+  static const List<bool> pattern2255ParentA = [
     true,
     true,
     false,
@@ -132,7 +132,7 @@ class CustodyScheduleGenerator {
     final idx = day.difference(anchor).inDays;
     if (idx < 0) return _weekly(r, day);
     final phase = ((idx % 14) + 14) % 14;
-    var isA = _2255ParentA[phase];
+    var isA = pattern2255ParentA[phase];
     if (!r.parentAStarts2255Cycle) isA = !isA;
     return isA ? r.parentAUserId : r.parentBUserId;
   }

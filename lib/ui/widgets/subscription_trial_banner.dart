@@ -20,7 +20,9 @@ class _SubscriptionTrialBannerState extends State<SubscriptionTrialBanner> {
 
   Future<void> _refresh() async {
     final session = _session;
-    if (session == null || !session.isPremium) {
+    if (session == null ||
+        session.isAttorney ||
+        !session.hasRevenueCatPremium) {
       if (_trialDays != null && mounted) setState(() => _trialDays = null);
       return;
     }
@@ -50,8 +52,12 @@ class _SubscriptionTrialBannerState extends State<SubscriptionTrialBanner> {
 
   @override
   Widget build(BuildContext context) {
-    final premium = context.watch<CaseContext>().isPremium;
-    if (!premium || _trialDays == null) return const SizedBox.shrink();
+    final session = context.watch<CaseContext>();
+    if (session.isAttorney ||
+        !session.hasRevenueCatPremium ||
+        _trialDays == null) {
+      return const SizedBox.shrink();
+    }
 
     final days = _trialDays!;
     final urgent = days <= 3;

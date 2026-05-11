@@ -298,6 +298,7 @@ class _CustodyDayScheduleCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
+                    key: ValueKey<String>(dropValue),
                     decoration: InputDecoration(
                       filled: true,
                       fillColor: PLDesign.surface,
@@ -310,7 +311,7 @@ class _CustodyDayScheduleCard extends StatelessWidget {
                         borderSide: BorderSide(color: PLDesign.border),
                       ),
                     ),
-                    value: dropValue,
+                    initialValue: dropValue,
                     items: const [
                       DropdownMenuItem(
                         value: 'schedule',

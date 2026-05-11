@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import 'onboarding/onboarding_session.dart';
 import 'onboarding/onboarding_steps.dart';
 import 'providers/case_context.dart';
 import 'ui/accept_invite_screen.dart';
@@ -38,6 +39,7 @@ class _AppRouterState extends State<AppRouter> {
   String? _pendingInviteId;
   String? _pendingInviteToken;
   String? _pendingInviteCode;
+
   /// Survives [CaseContext] rebuilds while the accept UI is on screen.
   String? _activeInviteToken;
   VoidCallback? _inviteListener;
@@ -100,10 +102,6 @@ class _AppRouterState extends State<AppRouter> {
     super.dispose();
   }
 
-  bool _needsAccountTypeSelection(String step) {
-    return step == OnboardingSteps.accountType || step == OnboardingSteps.roleSelection;
-  }
-
   @override
   Widget build(BuildContext context) {
     final session = context.watch<CaseContext>();
@@ -112,10 +110,10 @@ class _AppRouterState extends State<AppRouter> {
       startupDiag(
         'AppRouter.build',
         'BLOCKED → SessionLoadingGate '
-        '(authInitializing=${session.authInitializing}, '
-        'signedIn=${session.isSignedIn}, '
-        'userDocLoading=${session.userDocLoading}, '
-        'premiumLoading=${session.premiumLoading})',
+            '(authInitializing=${session.authInitializing}, '
+            'signedIn=${session.isSignedIn}, '
+            'userDocLoading=${session.userDocLoading}, '
+            'premiumLoading=${session.premiumLoading})',
       );
       return const SessionLoadingGate();
     }
@@ -142,7 +140,8 @@ class _AppRouterState extends State<AppRouter> {
     if (_activeInviteToken == null &&
         (_pendingInviteToken != null ||
             InviteLinkService.pendingInviteToken.value != null)) {
-      final t = _pendingInviteToken ?? InviteLinkService.pendingInviteToken.value;
+      final t =
+          _pendingInviteToken ?? InviteLinkService.pendingInviteToken.value;
       if (t != null && t.isNotEmpty) {
         _pendingInviteToken = null;
         InviteLinkService.takePendingInviteToken();
@@ -180,17 +179,16 @@ class _AppRouterState extends State<AppRouter> {
       return AcceptInviteScreen(inviteId: pendingLegacyId);
     }
 
-    // --- Account type (Parent vs Attorney) — must run before counsel dashboard ---
-    if (_needsAccountTypeSelection(step)) {
-      return const AccountTypeScreen();
-    }
-
-    // --- Attorney path (never parent custody / children setup) ---
+    // --- Attorney path first (never parent picker, custody, or RevenueCat paywall) ---
     if (session.isAttorney) {
-      if (step == OnboardingSteps.attorneyProfile) {
+      if (OnboardingSession.attorneyShowsSetupWizard(session)) {
         return const AttorneyOnboardingScreen();
       }
       return const AttorneyDashboardScreen();
+    }
+
+    if (OnboardingSession.stepNeedsRoleSelection(step)) {
+      return const AccountTypeScreen();
     }
 
     // --- Parent path ---

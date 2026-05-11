@@ -94,7 +94,7 @@ const SizedBox(height: 10),
 Container(
 padding: const EdgeInsets.all(10),
 decoration: BoxDecoration(
-color: PLDesign.warning.withOpacity(.15),
+color: PLDesign.warning.withValues(alpha:.15),
 borderRadius: BorderRadius.circular(12),
 ),
 child: const Row(

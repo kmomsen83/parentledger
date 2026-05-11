@@ -187,7 +187,8 @@ class _ExpensesListScreenState extends State<ExpensesListScreen> {
                               : double.tryParse('${e['amount']}') ?? 0.0;
                           final desc = (e['description'] ?? '').toString();
                           final created = e['createdAt'];
-                          final receiptUrl = (e['receiptUrl'] ?? '').toString().trim();
+                          final receiptUrl =
+                              CaseExpenseService.receiptImageUrlFrom(e) ?? '';
                           String whenLabel = '—';
                           if (created is Timestamp) {
                             whenLabel = df.format(created.toDate());

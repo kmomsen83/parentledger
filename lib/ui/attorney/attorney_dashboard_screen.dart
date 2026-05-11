@@ -5,22 +5,86 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:printing/printing.dart';
-import 'package:provider/provider.dart';
 
 import '../../design/design.dart';
-import '../../services/attorney_case_bundle_pdf_service.dart';
 import '../../services/attorney_case_priority.dart';
 import '../../services/attorney_client_card_loader.dart';
-import '../../services/case_switcher_service.dart';
 import '../../services/notification_service.dart';
-import '../case_unified_timeline_screen.dart';
-import '../documents_library_screen.dart';
 import '../enter_invite_code_screen.dart';
-import '../legal_export_center_screen.dart';
 import '../notifications_center_screen.dart';
 import 'attorney_priority_badge.dart';
-import 'client_case_screen.dart';
+import 'attorney_profile_screen.dart';
+import 'client_workspace_screen.dart';
+
+List<Widget> _pendingInviteSlivers(List<AttorneyClientCardVm> models) {
+  final pending =
+      models.where((m) => m.caseStatusLabel == 'Pending').toList();
+  if (pending.isEmpty) return <Widget>[];
+  return <Widget>[
+    const SliverToBoxAdapter(child: _SectionLabel('PENDING INVITES')),
+    SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      sliver: SliverList.separated(
+        itemCount: pending.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 10),
+        itemBuilder: (context, i) => _PremiumClientCard(
+          vm: pending[i],
+          onTap: () => _openClientWorkspace(context, pending[i]),
+        ),
+      ),
+    ),
+    const SliverToBoxAdapter(child: SizedBox(height: 18)),
+  ];
+}
+
+List<Widget> _activeClientWorkspaceSlivers(List<AttorneyClientCardVm> models) {
+  final active =
+      models.where((m) => m.caseStatusLabel != 'Pending').toList();
+  if (active.isEmpty) {
+    return <Widget>[
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+          child: Text(
+            models.any((m) => m.caseStatusLabel == 'Pending')
+                ? 'Active matters appear here when invites are accepted.'
+                : 'Link a client to open a dedicated workspace.',
+            style: PLDesign.caption.copyWith(
+              color: Colors.white.withValues(alpha: 0.55),
+              height: 1.35,
+            ),
+          ),
+        ),
+      ),
+    ];
+  }
+  return <Widget>[
+    SliverPadding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      sliver: SliverList.separated(
+        itemCount: active.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 12),
+        itemBuilder: (context, i) => _PremiumClientCard(
+          vm: active[i],
+          onTap: () => _openClientWorkspace(context, active[i]),
+        ),
+      ),
+    ),
+  ];
+}
+
+void _openClientWorkspace(BuildContext context, AttorneyClientCardVm vm) {
+  Navigator.push<void>(
+    context,
+    MaterialPageRoute<void>(
+      builder: (_) => ClientWorkspaceScreen(
+        caseId: vm.caseId,
+        parentNamesLabel: vm.parentNamesLabel,
+        caseStatusLabel: vm.caseStatusLabel,
+      ),
+    ),
+  );
+}
 
 /// Premium attorney command center: matters, summary tiles, activity, exports.
 ///
@@ -131,7 +195,7 @@ class _AttorneyDashboardBodyState extends State<_AttorneyDashboardBody> {
 
     return FutureBuilder<List<AttorneyClientCardVm>>(
       key: ValueKey('${rowKey}_$_pulse'),
-      future: AttorneyClientCardLoader.loadAll(widget.rows),
+      future: AttorneyClientCardLoader.loadAll(widget.rows, widget.uid),
       builder: (context, modelSnap) {
         final models = modelSnap.data;
         return SafeArea(
@@ -147,7 +211,9 @@ class _AttorneyDashboardBodyState extends State<_AttorneyDashboardBody> {
                 parent: BouncingScrollPhysics(),
               ),
               slivers: [
-                SliverToBoxAdapter(child: _DashboardHeader(uid: widget.uid)),
+                SliverToBoxAdapter(
+                  child: _AttorneyDashboardHeader(uid: widget.uid),
+                ),
                 const SliverToBoxAdapter(child: SizedBox(height: 6)),
                 const SliverToBoxAdapter(child: _TrustRibbon()),
                 const SliverToBoxAdapter(child: SizedBox(height: 18)),
@@ -163,25 +229,6 @@ class _AttorneyDashboardBodyState extends State<_AttorneyDashboardBody> {
                     ),
                   ),
                 ] else ...[
-                  SliverToBoxAdapter(
-                    child: _SectionLabel(
-                      'WORKSPACE',
-                      trailing: _TopRightActions(models: models),
-                    ),
-                  ),
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(14, 8, 14, 4),
-                    sliver: _SummaryGridSliver(models: models),
-                  ),
-                  const SliverToBoxAdapter(child: SizedBox(height: 22)),
-                  SliverToBoxAdapter(
-                    child: _SectionLabel(
-                      'QUICK ACTIONS',
-                      trailing: _PermissionsHint(),
-                    ),
-                  ),
-                  SliverToBoxAdapter(child: _QuickActionsRow(models: models)),
-                  const SliverToBoxAdapter(child: SizedBox(height: 26)),
                   if (models.isEmpty) ...[
                     const SliverToBoxAdapter(child: _EmptyWorkspaceCard()),
                     const SliverToBoxAdapter(child: SizedBox(height: 22)),
@@ -192,9 +239,10 @@ class _AttorneyDashboardBodyState extends State<_AttorneyDashboardBody> {
                       child: _OnboardingChecklist(models: models),
                     ),
                   ] else ...[
+                    ..._pendingInviteSlivers(models),
                     SliverToBoxAdapter(
                       child: _SectionLabel(
-                        'CLIENT MATTERS',
+                        'CLIENT WORKSPACES',
                         trailing: Text(
                           '${models.length} linked',
                           style: PLDesign.caption.copyWith(
@@ -206,20 +254,18 @@ class _AttorneyDashboardBodyState extends State<_AttorneyDashboardBody> {
                         ),
                       ),
                     ),
-                    SliverPadding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      sliver: SliverList.separated(
-                        itemCount: models.length,
-                        separatorBuilder: (_, __) =>
-                            const SizedBox(height: 12),
-                        itemBuilder: (context, i) => _PremiumClientCard(
-                          vm: models[i],
-                          onTap: () =>
-                              _openClientCase(context, models[i]),
-                        ),
-                      ),
-                    ),
+                    ..._activeClientWorkspaceSlivers(models),
                   ],
+                  const SliverToBoxAdapter(child: SizedBox(height: 22)),
+                  SliverToBoxAdapter(
+                    child: _SectionLabel(
+                      'QUICK ACTIONS',
+                      trailing: _PermissionsHint(),
+                    ),
+                  ),
+                  const SliverToBoxAdapter(
+                    child: _DashboardQuickActionsRow(),
+                  ),
                   const SliverToBoxAdapter(child: SizedBox(height: 28)),
                   const SliverToBoxAdapter(
                     child: _SectionLabel('RECENT ACTIVITY'),
@@ -227,11 +273,6 @@ class _AttorneyDashboardBodyState extends State<_AttorneyDashboardBody> {
                   SliverToBoxAdapter(
                     child: _RecentActivityList(models: models),
                   ),
-                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
-                  const SliverToBoxAdapter(
-                    child: _SectionLabel('ATTORNEY PERMISSIONS'),
-                  ),
-                  const SliverToBoxAdapter(child: _PermissionsCard()),
                   const SliverToBoxAdapter(child: SizedBox(height: 32)),
                 ],
                 const SliverToBoxAdapter(child: SizedBox(height: 96)),
@@ -248,84 +289,180 @@ class _AttorneyDashboardBodyState extends State<_AttorneyDashboardBody> {
 // Header
 // -----------------------------------------------------------------------------
 
-class _DashboardHeader extends StatelessWidget {
-  const _DashboardHeader({required this.uid});
+class _AttorneyDashboardHeader extends StatelessWidget {
+  const _AttorneyDashboardHeader({required this.uid});
 
   final String uid;
 
+  static String _initials(String fullName, String? email) {
+    final t = fullName.trim();
+    if (t.isNotEmpty) {
+      final parts =
+          t.split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
+      if (parts.length >= 2) {
+        return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
+      }
+      return t[0].toUpperCase();
+    }
+    if (email != null && email.isNotEmpty) return email[0].toUpperCase();
+    return 'A';
+  }
+
   @override
   Widget build(BuildContext context) {
-    final user = FirebaseAuth.instance.currentUser;
-    final displayName = (user?.displayName ?? '').trim();
-    final email = (user?.email ?? '').trim();
-    final initial = displayName.isNotEmpty
-        ? displayName[0].toUpperCase()
-        : (email.isNotEmpty ? email[0].toUpperCase() : '?');
+    return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      stream: FirebaseFirestore.instance.collection('users').doc(uid).snapshots(),
+      builder: (context, snap) {
+        final d = snap.data?.data() ?? {};
+        final fn = (d['firstName'] ?? '').toString().trim();
+        final ln = (d['lastName'] ?? '').toString().trim();
+        final firm = (d['firmName'] ?? '').toString().trim();
+        final fullName = '$fn $ln'.trim();
+        final user = FirebaseAuth.instance.currentUser;
+        final photo = (d['profilePhotoUrl'] ?? '').toString().trim();
+        final fbPhoto = (user?.photoURL ?? '').toString().trim();
+        final email =
+            (d['email'] ?? user?.email ?? '').toString().trim();
+        final usePhoto = photo.isNotEmpty ? photo : fbPhoto;
+        final displayTitle = fullName.isNotEmpty
+            ? fullName
+            : (user?.displayName ?? 'Counsel').trim();
+        final initials =
+            _initials(displayTitle, email.isNotEmpty ? email : user?.email);
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 6),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          _Avatar(initial: initial),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'COUNSEL · ${displayName.isEmpty ? "Attorney" : displayName.split(' ').first.toUpperCase()}',
-                  style: PLDesign.dashboardSectionLabel.copyWith(
-                    color: PLDesign.premiumGold.withValues(alpha: 0.85),
-                    fontSize: 10,
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 6),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () => Navigator.push<void>(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => const AttorneyProfileScreen(),
+                    ),
                   ),
+                  child: _CounselAvatar(photoUrl: usePhoto, initials: initials),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  'Attorney Dashboard',
-                  style: PLDesign.heroTitle.copyWith(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w800,
-                    height: 1.05,
-                    letterSpacing: -0.5,
-                  ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            displayTitle.isEmpty ? 'Counsel' : displayTitle,
+                            style: PLDesign.heroTitle.copyWith(
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                              height: 1.1,
+                              letterSpacing: -0.4,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: PLDesign.primary.withValues(alpha: 0.14),
+                            borderRadius: BorderRadius.circular(999),
+                            border: Border.all(
+                              color: PLDesign.primary.withValues(alpha: 0.4),
+                            ),
+                          ),
+                          child: Text(
+                            'ATTORNEY',
+                            style: PLDesign.caption.copyWith(
+                              color: PLDesign.primary,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 9,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (firm.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        firm,
+                        style: PLDesign.body.copyWith(
+                          color: Colors.white.withValues(alpha: 0.66),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    const SizedBox(height: 4),
+                    Text(
+                      'Command center · client overview',
+                      style: PLDesign.dashboardSectionLabel.copyWith(
+                        color: PLDesign.premiumGold.withValues(alpha: 0.82),
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              _CircleIconButton(
+                tooltip: 'Search matters',
+                icon: Icons.search_rounded,
+                onTap: () => _openSearchSheet(context, uid),
+              ),
+              const SizedBox(width: 8),
+              _NotificationsBell(uid: uid),
+            ],
           ),
-          _CircleIconButton(
-            tooltip: 'Search matters',
-            icon: Icons.search_rounded,
-            onTap: () => _openSearchSheet(context, uid),
-          ),
-          const SizedBox(width: 8),
-          _NotificationsBell(uid: uid),
-        ],
-      ),
+        );
+      },
     );
   }
 }
 
-class _Avatar extends StatelessWidget {
-  const _Avatar({required this.initial});
+class _CounselAvatar extends StatelessWidget {
+  const _CounselAvatar({
+    required this.photoUrl,
+    required this.initials,
+  });
 
-  final String initial;
+  final String photoUrl;
+  final String initials;
+
+  static const double _size = 48;
 
   @override
   Widget build(BuildContext context) {
+    final Widget inner = photoUrl.isNotEmpty
+        ? ClipOval(
+            child: Image.network(
+              photoUrl,
+              width: _size,
+              height: _size,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => _initialsBackdrop(),
+            ),
+          )
+        : _initialsBackdrop();
+
     return Container(
-      width: 46,
-      height: 46,
+      width: _size,
+      height: _size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            PLDesign.primary.withValues(alpha: 0.9),
-            PLDesign.ai.withValues(alpha: 0.8),
-          ],
-        ),
         boxShadow: [
           BoxShadow(
             color: PLDesign.primary.withValues(alpha: 0.35),
@@ -333,17 +470,35 @@ class _Avatar extends StatelessWidget {
             offset: const Offset(0, 6),
           ),
         ],
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.22),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.22)),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: inner,
+    );
+  }
+
+  Widget _initialsBackdrop() {
+    return Container(
+      width: _size,
+      height: _size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            PLDesign.primary.withValues(alpha: 0.92),
+            PLDesign.ai.withValues(alpha: 0.82),
+          ],
         ),
       ),
       alignment: Alignment.center,
       child: Text(
-        initial,
+        initials.length > 2 ? initials.substring(0, 2) : initials,
         style: const TextStyle(
           color: Colors.white,
           fontWeight: FontWeight.w800,
-          fontSize: 19,
+          fontSize: 17,
         ),
       ),
     );
@@ -576,42 +731,149 @@ class _SectionLabel extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// Top-right actions (in WORKSPACE label row)
+// Dashboard quick actions (global — matter tools live in each workspace)
 // -----------------------------------------------------------------------------
 
-class _TopRightActions extends StatelessWidget {
-  const _TopRightActions({required this.models});
-
-  final List<AttorneyClientCardVm> models;
+class _DashboardQuickActionsRow extends StatelessWidget {
+  const _DashboardQuickActionsRow();
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(999),
-        onTap: () => _openCounselQuickActionsSheet(context, models),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.bolt_rounded,
-                size: 15,
-                color: PLDesign.premiumGold.withValues(alpha: 0.9),
+    return SizedBox(
+      height: 92,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        physics: const BouncingScrollPhysics(),
+        children: [
+          _DashQuickChip(
+            icon: Icons.person_add_alt_1_rounded,
+            label: 'Add client',
+            subtitle: 'Invite code',
+            accent: PLDesign.primary,
+            onTap: () => Navigator.push<void>(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => const EnterInviteCodeScreen(),
               ),
-              const SizedBox(width: 4),
-              Text(
-                'Actions',
-                style: PLDesign.caption.copyWith(
-                  color: Colors.white.withValues(alpha: 0.78),
-                  fontWeight: FontWeight.w700,
-                  fontSize: 11.5,
-                  letterSpacing: 0.3,
+            ),
+          ),
+          const SizedBox(width: 10),
+          _DashQuickChip(
+            icon: Icons.notifications_active_outlined,
+            label: 'Notifications',
+            subtitle: 'Counsel alerts',
+            accent: PLDesign.info,
+            onTap: () => Navigator.push<void>(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => const NotificationsCenterScreen(),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          _DashQuickChip(
+            icon: Icons.badge_outlined,
+            label: 'Attorney profile',
+            subtitle: 'Branding & account',
+            accent: PLDesign.premiumGold,
+            onTap: () => Navigator.push<void>(
+              context,
+              MaterialPageRoute<void>(
+                builder: (_) => const AttorneyProfileScreen(),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DashQuickChip extends StatelessWidget {
+  const _DashQuickChip({
+    required this.icon,
+    required this.label,
+    required this.subtitle,
+    required this.accent,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final String subtitle;
+  final Color accent;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 148,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(18),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Ink(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  accent.withValues(alpha: 0.18),
+                  accent.withValues(alpha: 0.04),
+                ],
+              ),
+              border: Border.all(color: accent.withValues(alpha: 0.42)),
+              boxShadow: [
+                BoxShadow(
+                  color: accent.withValues(alpha: 0.12),
+                  blurRadius: 14,
+                  offset: const Offset(0, 5),
                 ),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(7),
+                    decoration: BoxDecoration(
+                      color: accent.withValues(alpha: 0.22),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(icon, size: 16, color: accent),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        label,
+                        style: PLDesign.sectionTitle.copyWith(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          height: 1.15,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: PLDesign.caption.copyWith(
+                          color: Colors.white.withValues(alpha: 0.55),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -641,357 +903,6 @@ class _PermissionsHint extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-// -----------------------------------------------------------------------------
-// Summary grid (always visible 6 tiles)
-// -----------------------------------------------------------------------------
-
-class _SummaryGridSliver extends StatelessWidget {
-  const _SummaryGridSliver({required this.models});
-
-  final List<AttorneyClientCardVm> models;
-
-  @override
-  Widget build(BuildContext context) {
-    final activeClients = models.where((e) => e.isActive).length;
-    final pendingInvites =
-        models.where((e) => e.caseStatusLabel == 'Pending').length;
-    final cutoff = DateTime.now().subtract(const Duration(hours: 48));
-    final recentUploads = models
-        .where((e) =>
-            e.lastActivityDisplay != null &&
-            e.lastActivityDisplay!.isAfter(cutoff))
-        .length;
-    final reimbursements =
-        models.fold<int>(0, (s, e) => s + e.status.unpaidExpenseCount);
-    final timelineAlerts =
-        models.fold<int>(0, (s, e) => s + e.status.missedExchangeCount);
-    final complianceFlags =
-        models.fold<int>(0, (s, e) => s + e.status.flaggedMessageCount);
-
-    final tiles = <_SummaryTileData>[
-      _SummaryTileData(
-        icon: Icons.groups_outlined,
-        label: 'Active clients',
-        value: activeClients,
-        accent: PLDesign.success,
-      ),
-      _SummaryTileData(
-        icon: Icons.mark_email_read_outlined,
-        label: 'Pending invites',
-        value: pendingInvites,
-        accent: PLDesign.warning,
-      ),
-      _SummaryTileData(
-        icon: Icons.cloud_upload_outlined,
-        label: 'New uploads (48h)',
-        value: recentUploads,
-        accent: PLDesign.info,
-      ),
-      _SummaryTileData(
-        icon: Icons.payments_outlined,
-        label: 'Open reimbursements',
-        value: reimbursements,
-        accent: PLDesign.primary,
-      ),
-      _SummaryTileData(
-        icon: Icons.event_busy_outlined,
-        label: 'Timeline alerts',
-        value: timelineAlerts,
-        accent: PLDesign.danger,
-      ),
-      _SummaryTileData(
-        icon: Icons.flag_outlined,
-        label: 'Compliance flags',
-        value: complianceFlags,
-        accent: PLDesign.ai,
-      ),
-    ];
-
-    return SliverGrid(
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 3,
-        mainAxisSpacing: 10,
-        crossAxisSpacing: 10,
-        childAspectRatio: 0.92,
-      ),
-      delegate: SliverChildBuilderDelegate(
-        (context, i) => _SummaryTile(data: tiles[i]),
-        childCount: tiles.length,
-      ),
-    );
-  }
-}
-
-class _SummaryTileData {
-  const _SummaryTileData({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.accent,
-  });
-
-  final IconData icon;
-  final String label;
-  final int value;
-  final Color accent;
-}
-
-class _SummaryTile extends StatelessWidget {
-  const _SummaryTile({required this.data});
-
-  final _SummaryTileData data;
-
-  @override
-  Widget build(BuildContext context) {
-    final isActive = data.value > 0;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            const Color(0xff1c2741).withValues(alpha: 0.95),
-            const Color(0xff10182a).withValues(alpha: 0.95),
-          ],
-        ),
-        border: Border.all(
-          color: isActive
-              ? data.accent.withValues(alpha: 0.4)
-              : Colors.white.withValues(alpha: 0.06),
-          width: 1,
-        ),
-        boxShadow: isActive
-            ? [
-                BoxShadow(
-                  color: data.accent.withValues(alpha: 0.12),
-                  blurRadius: 18,
-                  offset: const Offset(0, 8),
-                ),
-              ]
-            : const [],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(7),
-            decoration: BoxDecoration(
-              color: data.accent.withValues(alpha: 0.16),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              data.icon,
-              size: 16,
-              color: data.accent.withValues(alpha: 0.95),
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${data.value}',
-                style: PLDesign.statNumber.copyWith(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
-                  height: 1.0,
-                  color: isActive
-                      ? Colors.white
-                      : Colors.white.withValues(alpha: 0.85),
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                data.label,
-                style: PLDesign.caption.copyWith(
-                  color: Colors.white.withValues(alpha: 0.6),
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  height: 1.2,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// -----------------------------------------------------------------------------
-// Quick actions (horizontal scroll)
-// -----------------------------------------------------------------------------
-
-class _QuickActionsRow extends StatelessWidget {
-  const _QuickActionsRow({required this.models});
-
-  final List<AttorneyClientCardVm> models;
-
-  @override
-  Widget build(BuildContext context) {
-    final actions = <_QuickActionData>[
-      _QuickActionData(
-        icon: Icons.person_add_alt_1_rounded,
-        label: 'Add client',
-        helper: 'Invite code',
-        accent: PLDesign.primary,
-        onTap: () => Navigator.push<void>(
-          context,
-          MaterialPageRoute<void>(
-            builder: (_) => const EnterInviteCodeScreen(),
-          ),
-        ),
-      ),
-      _QuickActionData(
-        icon: Icons.upload_file_rounded,
-        label: 'Upload order',
-        helper: 'Court PDF',
-        accent: PLDesign.info,
-        onTap: () => _pickCaseAndOpen(context, models, _MatterAction.documents),
-      ),
-      _QuickActionData(
-        icon: Icons.description_outlined,
-        label: 'Export case',
-        helper: 'Court bundle',
-        accent: PLDesign.premiumGold,
-        onTap: () =>
-            _pickCaseAndOpen(context, models, _MatterAction.exportCenter),
-      ),
-      _QuickActionData(
-        icon: Icons.picture_as_pdf_outlined,
-        label: 'PDF bundle',
-        helper: 'One-tap',
-        accent: PLDesign.danger,
-        onTap: () =>
-            _pickCaseAndOpen(context, models, _MatterAction.bundlePdf),
-      ),
-      _QuickActionData(
-        icon: Icons.history_rounded,
-        label: 'Review timeline',
-        helper: 'Case events',
-        accent: PLDesign.success,
-        onTap: () => _pickCaseAndOpen(context, models, _MatterAction.timeline),
-      ),
-    ];
-
-    return SizedBox(
-      height: 96,
-      child: ListView.separated(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        itemCount: actions.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
-        itemBuilder: (context, i) => _QuickActionTile(data: actions[i]),
-      ),
-    );
-  }
-}
-
-class _QuickActionData {
-  const _QuickActionData({
-    required this.icon,
-    required this.label,
-    required this.helper,
-    required this.accent,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final String helper;
-  final Color accent;
-  final VoidCallback onTap;
-}
-
-class _QuickActionTile extends StatelessWidget {
-  const _QuickActionTile({required this.data});
-
-  final _QuickActionData data;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 132,
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(18),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: data.onTap,
-          child: Ink(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  data.accent.withValues(alpha: 0.18),
-                  data.accent.withValues(alpha: 0.04),
-                ],
-              ),
-              border: Border.all(
-                color: data.accent.withValues(alpha: 0.42),
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: data.accent.withValues(alpha: 0.12),
-                  blurRadius: 16,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(7),
-                    decoration: BoxDecoration(
-                      color: data.accent.withValues(alpha: 0.22),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(data.icon,
-                        size: 16, color: data.accent),
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        data.label,
-                        style: PLDesign.sectionTitle.copyWith(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                          height: 1.15,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        data.helper,
-                        style: PLDesign.caption.copyWith(
-                          color: Colors.white.withValues(alpha: 0.55),
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
     );
   }
 }
@@ -1071,23 +982,23 @@ class _EmptyWorkspaceCard extends StatelessWidget {
                           ),
                           const SizedBox(width: 12),
                           const Text(
-                            'WORKSPACE READY',
+                            'CLIENT HUB',
                             style: PLDesign.premiumCaseEyebrow,
                           ),
                         ],
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        'Your legal workspace\nis ready.',
+                        'Build your\nclient roster.',
                         style: PLDesign.premiumCaseTitle.copyWith(
                           fontSize: 24,
                         ),
                       ),
                       const SizedBox(height: 10),
                       Text(
-                        'Connect a client to begin reviewing timelines, '
-                        'records, reimbursements, and court-ready '
-                        'documentation.',
+                        'Each connected client opens a dedicated workspace '
+                        'for timelines, messages, documents, exports, and '
+                        'court-ready bundles.',
                         style: PLDesign.body.copyWith(
                           color: Colors.white.withValues(alpha: 0.72),
                           height: 1.5,
@@ -1250,31 +1161,28 @@ class _OnboardingChecklist extends StatelessWidget {
       _ChecklistItem(
         icon: Icons.cloud_upload_outlined,
         title: 'Upload first document',
-        subtitle: 'Court orders, custody agreements',
+        subtitle: 'Open a client workspace → Documents',
         done: hasRecent,
         onTap: hasAny
-            ? () =>
-                _pickCaseAndOpen(context, models, _MatterAction.documents)
+            ? () => _openClientWorkspace(context, models.first)
             : null,
       ),
       _ChecklistItem(
         icon: Icons.history_rounded,
         title: 'Review case timeline',
-        subtitle: 'Exchanges, messages, flagged events',
-        done: hasAny,
+        subtitle: 'Open a client workspace → Matter tools',
+        done: hasRecent,
         onTap: hasAny
-            ? () =>
-                _pickCaseAndOpen(context, models, _MatterAction.timeline)
+            ? () => _openClientWorkspace(context, models.first)
             : null,
       ),
       _ChecklistItem(
         icon: Icons.picture_as_pdf_outlined,
         title: 'Export first court bundle',
-        subtitle: 'Court-ready PDF in seconds',
+        subtitle: 'Open a client workspace → Exports',
         done: false,
         onTap: hasAny
-            ? () =>
-                _pickCaseAndOpen(context, models, _MatterAction.bundlePdf)
+            ? () => _openClientWorkspace(context, models.first)
             : null,
       ),
     ];
@@ -1503,13 +1411,25 @@ class _PremiumClientCard extends StatelessWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              const SizedBox(height: 3),
+                              const SizedBox(height: 4),
+                              Text(
+                                vm.caseTitle,
+                                style: PLDesign.caption.copyWith(
+                                  color:
+                                      Colors.white.withValues(alpha: 0.62),
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
                               Text(
                                 _lastActivityLabel(vm.lastActivityDisplay),
                                 style: PLDesign.caption.copyWith(
                                   color:
-                                      Colors.white.withValues(alpha: 0.5),
-                                  fontSize: 11.5,
+                                      Colors.white.withValues(alpha: 0.45),
+                                  fontSize: 11,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
@@ -1533,35 +1453,36 @@ class _PremiumClientCard extends StatelessWidget {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 14),
-                    Row(
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
                       children: [
-                        _MetricChip(
-                          icon: Icons.event_busy_outlined,
-                          label: 'Missed',
-                          value: vm.status.missedExchangeCount,
-                          accent: vm.status.missedExchangeCount > 0
-                              ? PLDesign.warning
-                              : PLDesign.textMuted,
+                        _ClientHubChip(
+                          icon: vm.isActive
+                              ? Icons.link_rounded
+                              : Icons.hourglass_empty_rounded,
+                          label: vm.isActive
+                              ? 'Connected'
+                              : 'Awaiting co-parent',
+                          accent: vm.isActive
+                              ? PLDesign.success
+                              : PLDesign.warning,
                         ),
-                        const SizedBox(width: 8),
-                        _MetricChip(
-                          icon: Icons.flag_outlined,
-                          label: 'Flags',
-                          value: vm.status.flaggedMessageCount,
-                          accent: vm.status.flaggedMessageCount > 0
-                              ? PLDesign.danger
-                              : PLDesign.textMuted,
-                        ),
-                        const SizedBox(width: 8),
-                        _MetricChip(
-                          icon: Icons.payments_outlined,
-                          label: 'Unpaid',
-                          value: vm.status.unpaidExpenseCount,
-                          accent: vm.status.unpaidExpenseCount > 0
-                              ? PLDesign.primary
-                              : PLDesign.textMuted,
-                        ),
+                        if (vm.unreadNotificationsCount > 0)
+                          _ClientHubChip(
+                            icon: Icons.mark_email_unread_outlined,
+                            label:
+                                '${vm.unreadNotificationsCount} unread',
+                            accent: PLDesign.info,
+                          ),
+                        if (vm.status.flaggedMessageCount > 0 ||
+                            vm.status.missedExchangeCount > 0)
+                          _ClientHubChip(
+                            icon: Icons.warning_amber_rounded,
+                            label: 'Flagged activity',
+                            accent: PLDesign.danger,
+                          ),
                       ],
                     ),
                     const SizedBox(height: 12),
@@ -1569,11 +1490,14 @@ class _PremiumClientCard extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            vm.status.keyStatSummary,
+                            vm.status.needsAttention
+                                ? vm.status.keyStatSummary
+                                : 'Open workspace for timelines, messages, '
+                                    'documents, and exports.',
                             style: PLDesign.body.copyWith(
                               color: vm.status.needsAttention
                                   ? accent.withValues(alpha: 0.95)
-                                  : Colors.white.withValues(alpha: 0.65),
+                                  : Colors.white.withValues(alpha: 0.58),
                               fontSize: 13.5,
                               fontWeight: FontWeight.w600,
                               height: 1.3,
@@ -1657,57 +1581,40 @@ class _StatusPill extends StatelessWidget {
   }
 }
 
-class _MetricChip extends StatelessWidget {
-  const _MetricChip({
+class _ClientHubChip extends StatelessWidget {
+  const _ClientHubChip({
     required this.icon,
     required this.label,
-    required this.value,
     required this.accent,
   });
 
   final IconData icon;
   final String label;
-  final int value;
   final Color accent;
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.04),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: accent.withValues(alpha: 0.22),
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: accent.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: accent),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: PLDesign.caption.copyWith(
+              fontSize: 11,
+              color: Colors.white.withValues(alpha: 0.88),
+              fontWeight: FontWeight.w700,
+            ),
           ),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 13, color: accent),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Text(
-                label,
-                style: PLDesign.caption.copyWith(
-                  fontSize: 11,
-                  color: Colors.white.withValues(alpha: 0.6),
-                  fontWeight: FontWeight.w600,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            Text(
-              '$value',
-              style: PLDesign.statNumber.copyWith(
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                color: accent,
-              ),
-            ),
-          ],
-        ),
+        ],
       ),
     );
   }
@@ -1813,7 +1720,7 @@ class _ActivityRow extends StatelessWidget {
     final headline = _activityHeadline(vm);
     return InkWell(
       borderRadius: BorderRadius.circular(20),
-      onTap: () => _openClientCase(context, vm),
+      onTap: () => _openClientWorkspace(context, vm),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
         child: Row(
@@ -1892,194 +1799,8 @@ class _ActivityRow extends StatelessWidget {
 }
 
 // -----------------------------------------------------------------------------
-// Permissions card
+// Bottom sheets
 // -----------------------------------------------------------------------------
-
-class _PermissionsCard extends StatelessWidget {
-  const _PermissionsCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(20),
-          color: Colors.white.withValues(alpha: 0.03),
-          border: Border.all(
-            color: Colors.white.withValues(alpha: 0.08),
-          ),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  Icons.shield_outlined,
-                  color: PLDesign.success.withValues(alpha: 0.95),
-                  size: 17,
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  'Counsel access scope',
-                  style: PLDesign.sectionTitle.copyWith(
-                    fontSize: 14.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            const _PermRow(
-              allowed: true,
-              text:
-                  'Upload court orders, view timelines, expenses, and messages',
-            ),
-            const _PermRow(
-              allowed: true,
-              text: 'Generate court-ready PDF bundles and exports',
-            ),
-            const _PermRow(
-              allowed: false,
-              text: 'Cannot impersonate parents or post on their behalf',
-            ),
-            const _PermRow(
-              allowed: false,
-              text:
-                  'Cannot edit communication history or protected case logs',
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _PermRow extends StatelessWidget {
-  const _PermRow({required this.allowed, required this.text});
-
-  final bool allowed;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = allowed ? PLDesign.success : PLDesign.danger;
-    final icon = allowed ? Icons.check_circle_rounded : Icons.block_rounded;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 14, color: accent),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              text,
-              style: PLDesign.body.copyWith(
-                color: Colors.white.withValues(alpha: 0.78),
-                fontSize: 13,
-                height: 1.35,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// -----------------------------------------------------------------------------
-// Bottom sheets — premium quick actions / matter picker
-// -----------------------------------------------------------------------------
-
-enum _MatterAction { documents, exportCenter, bundlePdf, timeline }
-
-void _openClientCase(BuildContext context, AttorneyClientCardVm vm) {
-  Navigator.push<void>(
-    context,
-    MaterialPageRoute<void>(
-      builder: (_) => ClientCaseScreen(
-        clientId: vm.caseId,
-        clientName: vm.parentNamesLabel,
-        caseStatusLabel: vm.caseStatusLabel,
-      ),
-    ),
-  );
-}
-
-Future<void> _openCounselQuickActionsSheet(
-  BuildContext context,
-  List<AttorneyClientCardVm> models,
-) async {
-  await _showPremiumSheet<void>(
-    context: context,
-    title: 'Quick actions',
-    subtitle: 'Manage clients, documents, and exports',
-    builder: (ctx) => Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _SheetTile(
-          icon: Icons.person_add_alt_1_rounded,
-          accent: PLDesign.primary,
-          title: 'Add client',
-          subtitle: 'Join a case with an invite code',
-          onTap: () {
-            Navigator.pop(ctx);
-            Navigator.push<void>(
-              context,
-              MaterialPageRoute<void>(
-                builder: (_) => const EnterInviteCodeScreen(),
-              ),
-            );
-          },
-        ),
-        _SheetTile(
-          icon: Icons.upload_file_rounded,
-          accent: PLDesign.info,
-          title: 'Upload court order',
-          subtitle: 'Add files to a client matter',
-          onTap: () {
-            Navigator.pop(ctx);
-            _pickCaseAndOpen(context, models, _MatterAction.documents);
-          },
-        ),
-        _SheetTile(
-          icon: Icons.description_outlined,
-          accent: PLDesign.premiumGold,
-          title: 'Export case file',
-          subtitle: 'Court-ready bundle for selected matter',
-          onTap: () {
-            Navigator.pop(ctx);
-            _pickCaseAndOpen(context, models, _MatterAction.exportCenter);
-          },
-        ),
-        _SheetTile(
-          icon: Icons.picture_as_pdf_outlined,
-          accent: PLDesign.danger,
-          title: 'Generate PDF bundle',
-          subtitle: 'One-tap timeline + records PDF',
-          onTap: () {
-            Navigator.pop(ctx);
-            _pickCaseAndOpen(context, models, _MatterAction.bundlePdf);
-          },
-        ),
-        _SheetTile(
-          icon: Icons.history_rounded,
-          accent: PLDesign.success,
-          title: 'Review timeline',
-          subtitle: 'Open the case timeline view',
-          onTap: () {
-            Navigator.pop(ctx);
-            _pickCaseAndOpen(context, models, _MatterAction.timeline);
-          },
-        ),
-      ],
-    ),
-  );
-}
 
 Future<void> _showPremiumSheet<T>({
   required BuildContext context,
@@ -2254,157 +1975,6 @@ class _SheetTile extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-void _pickCaseAndOpen(
-  BuildContext context,
-  List<AttorneyClientCardVm> models,
-  _MatterAction action,
-) {
-  if (models.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Connect a client matter first.'),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: PLDesign.surface,
-      ),
-    );
-    return;
-  }
-
-  if (models.length == 1) {
-    _runMatterAction(context, models.first, action);
-    return;
-  }
-
-  _showPremiumSheet<void>(
-    context: context,
-    title: 'Choose matter',
-    subtitle: 'Select the client this action applies to',
-    builder: (ctx) {
-      return ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(ctx).size.height * 0.55,
-        ),
-        child: ListView.separated(
-          shrinkWrap: true,
-          itemCount: models.length,
-          separatorBuilder: (_, __) => const SizedBox(height: 8),
-          itemBuilder: (_, i) {
-            final vm = models[i];
-            return _SheetTile(
-              icon: Icons.gavel_rounded,
-              accent: attorneyPriorityAccent(vm.status.priority),
-              title: vm.parentNamesLabel,
-              subtitle:
-                  '${vm.caseStatusLabel} · ${vm.status.keyStatSummary}',
-              onTap: () {
-                Navigator.pop(ctx);
-                _runMatterAction(context, vm, action);
-              },
-            );
-          },
-        ),
-      );
-    },
-  );
-}
-
-void _runMatterAction(
-  BuildContext context,
-  AttorneyClientCardVm vm,
-  _MatterAction action,
-) {
-  switch (action) {
-    case _MatterAction.documents:
-      Navigator.push<void>(
-        context,
-        MaterialPageRoute<void>(
-          builder: (_) => DocumentsLibraryScreen(caseId: vm.caseId),
-        ),
-      );
-      break;
-    case _MatterAction.exportCenter:
-      _openExportCenter(context, vm.caseId);
-      break;
-    case _MatterAction.bundlePdf:
-      _generateAndShareBundle(context, vm);
-      break;
-    case _MatterAction.timeline:
-      Navigator.push<void>(
-        context,
-        MaterialPageRoute<void>(
-          builder: (_) => CaseUnifiedTimelineScreen(caseId: vm.caseId),
-        ),
-      );
-      break;
-  }
-}
-
-Future<void> _openExportCenter(BuildContext context, String caseId) async {
-  final switcher = context.read<CaseSwitcherService>();
-  if (switcher.selectedCaseId != caseId) {
-    await switcher.selectCase(caseId);
-  }
-  if (!context.mounted) return;
-  await Navigator.push<void>(
-    context,
-    MaterialPageRoute<void>(
-      builder: (_) => const LegalExportCenterScreen(),
-    ),
-  );
-}
-
-Future<void> _generateAndShareBundle(
-  BuildContext context,
-  AttorneyClientCardVm vm,
-) async {
-  showDialog<void>(
-    context: context,
-    barrierDismissible: false,
-    builder: (ctx) => PopScope(
-      canPop: false,
-      child: AlertDialog(
-        backgroundColor: PLDesign.surface,
-        content: Row(
-          children: [
-            const SizedBox(
-              width: 26,
-              height: 26,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Text(
-                'Building case bundle…',
-                style: PLDesign.body.copyWith(color: PLDesign.textPrimary),
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-  try {
-    final bytes =
-        await AttorneyCaseBundlePdfService.buildPdfBytes(vm.caseId);
-    if (!context.mounted) return;
-    Navigator.of(context).pop();
-    await Printing.sharePdf(
-      bytes: bytes,
-      filename: 'case_bundle_${vm.caseId}.pdf',
-    );
-  } catch (e) {
-    if (!context.mounted) return;
-    Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Export failed: $e'),
-        backgroundColor: PLDesign.danger,
-        behavior: SnackBarBehavior.floating,
       ),
     );
   }

@@ -1,6 +1,9 @@
+import 'dart:developer' as developer;
+
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 
+import 'invite_callable_utils.dart';
 import 'invite_dynamic_link_builder.dart';
 
 /// Secure co-parent invites: UUID token stored in `coparentInvites/{token}` via Cloud Functions.
@@ -65,14 +68,44 @@ class CoparentInviteCodeService {
 
   /// Creates a new pending invite; returns HTTPS path URL + native deep link (no query params).
   static Future<CoparentInviteLinkResult> createInviteCode() async {
-    final callable = _functions.httpsCallable('createCoparentInviteCode');
-    final result = await callable.call();
-    final map = Map<String, dynamic>.from(
-      (result.data as Map?)?.cast<String, dynamic>() ?? {},
+    final callable = _functions.httpsCallable(
+      'createCoparentInviteCode',
+      options: HttpsCallableOptions(timeout: const Duration(seconds: 60)),
     );
-    final token = map['token']?.toString().trim() ?? '';
-    if (token.isEmpty) {
-      throw StateError('Invite generation failed: missing token from server.');
+    late final Map<String, dynamic> map;
+    try {
+      final result = await callable.call(<String, dynamic>{});
+      map = InviteCallableUtils.normalizeData(result.data);
+    } on FirebaseFunctionsException catch (e, st) {
+      developer.log(
+        'createCoparentInviteCode failed ${e.code} ${e.message}',
+        name: 'InviteFlow',
+        error: e,
+        stackTrace: st,
+      );
+      throw Exception(InviteCallableUtils.userMessageFor(e));
+    }
+    if (map['success'] == false) {
+      developer.log(
+        'createCoparentInviteCode success=false payload=$map',
+        name: 'InviteFlow',
+      );
+      throw Exception(
+        map['message']?.toString().trim().isNotEmpty == true
+            ? map['message'].toString().trim()
+            : 'We could not generate an invite link. Please try again.',
+      );
+    }
+    final token = InviteCallableUtils.pickInviteToken(map);
+    if (token == null || token.isEmpty) {
+      developer.log(
+        'createCoparentInviteCode missing token keys=${map.keys.toList()}',
+        name: 'InviteFlow',
+      );
+      throw Exception(
+        'We could not generate an invite link. Please check your connection '
+        'and try again. If this keeps happening, update the app.',
+      );
     }
 
     final universalLinkRaw =
@@ -110,11 +143,12 @@ class CoparentInviteCodeService {
     if (normalized.length < 6 || normalized.length > 8) {
       throw ArgumentError('Enter the invite code (6–8 characters).');
     }
-    final callable = _functions.httpsCallable('acceptCoparentInviteCode');
-    final result = await callable.call(<String, dynamic>{'code': normalized});
-    final map = Map<String, dynamic>.from(
-      (result.data as Map?)?.cast<String, dynamic>() ?? {},
+    final callable = _functions.httpsCallable(
+      'acceptCoparentInviteCode',
+      options: HttpsCallableOptions(timeout: const Duration(seconds: 60)),
     );
+    final result = await callable.call(<String, dynamic>{'code': normalized});
+    final map = InviteCallableUtils.normalizeData(result.data);
     return AcceptCoparentCodeResult(
       ok: map['ok'] == true,
       alreadyMember: map['alreadyMember'] == true,

@@ -1,4 +1,3 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -6,26 +5,16 @@ import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../design/design.dart';
-import '../../onboarding/onboarding_steps.dart';
+import '../../models/premium_feature.dart';
 import '../../providers/case_context.dart';
 import '../../services/crashlytics_service.dart';
 import '../../services/premium_sync_service.dart';
 import '../../services/revenuecat_service.dart';
+import '../../services/subscription_user_firestore_sync.dart';
 import '../paywall_screen.dart';
 
-/// Feature-specific upgrade UX — previews stay visible; sheet carries conversion.
-enum DashboardPremiumFeature {
-  insightsCluster,
-  caseFile,
-  parentingReport,
-  complianceReports,
-  trustEvidence,
-  proposals,
-  expenseLedger,
-  documentsLibrary,
-  calendarScheduling,
-  compromiseBoard,
-}
+/// Backward-compatible alias for [PremiumFeature] (existing call sites).
+typedef DashboardPremiumFeature = PremiumFeature;
 
 ({String title, String valueLine, List<String> bullets}) _copyFor(DashboardPremiumFeature f) {
   switch (f) {
@@ -143,6 +132,10 @@ Future<void> showPremiumUpgradeSheet(
   BuildContext context, {
   required DashboardPremiumFeature feature,
 }) {
+  final cx = context.read<CaseContext>();
+  if (cx.isAttorney) {
+    return Future<void>.value();
+  }
   return showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,
@@ -207,12 +200,14 @@ class _PremiumUpgradeSheetBodyState extends State<_PremiumUpgradeSheetBody> {
 
         final user = FirebaseAuth.instance.currentUser;
         if (user != null) {
-          await FirebaseFirestore.instance.collection('users').doc(user.uid).set(
-            {
-              'onboardingStep': OnboardingSteps.subscribed,
-              'accessLevel': 'subscription',
-            },
-            SetOptions(merge: true),
+          final infoAfter = await Purchases.getCustomerInfo();
+          await SubscriptionUserFirestoreSync.applyProEntitlement(
+            info: infoAfter,
+            planKey: 'restore',
+            onboardingStep: null,
+          );
+          await SubscriptionUserFirestoreSync.syncTrialConsumptionFromCustomerInfo(
+            infoAfter,
           );
         }
         if (!mounted) return;
@@ -242,6 +237,11 @@ class _PremiumUpgradeSheetBodyState extends State<_PremiumUpgradeSheetBody> {
 
   void _openPaywall() {
     if (_busy) return;
+    if (!mounted) return;
+    if (context.read<CaseContext>().isAttorney) {
+      Navigator.of(context).pop();
+      return;
+    }
     Navigator.of(context).pop();
     Navigator.of(widget.navigatorContext).push<void>(
       MaterialPageRoute<void>(

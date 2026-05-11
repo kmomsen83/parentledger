@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:parentledger/l10n/context_l10n.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -20,10 +19,16 @@ import '../onboarding/onboarding_steps.dart';
 import '../l10n/tone_models.dart';
 import '../l10n/tone_string_resolver.g.dart';
 import '../providers/case_context.dart';
+import '../services/crashlytics_service.dart';
 import '../services/event_coverage_validator.dart';
 import '../providers/tone_preference.dart';
 import '../services/firestore_fields.dart';
+import '../services/premium_sync_service.dart';
+import '../services/profile_media_service.dart';
 import '../services/revenuecat_service.dart';
+import '../services/subscription_user_firestore_sync.dart';
+import '../services/server_billing_sync.dart';
+import 'subscription/manage_plan_screen.dart';
 import 'children_list_screen.dart';
 import 'expenses_list_screen.dart';
 import 'entry_screen.dart';
@@ -205,29 +210,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _uploadPhoto(File file) async {
-    final uid = FirebaseAuth.instance.currentUser!.uid;
     try {
       setState(() {
         _uploading = true;
         _uploadProgress = 0;
       });
 
-      final ref = FirebaseStorage.instance.ref('profile_photos/$uid.jpg');
-      final task = ref.putFile(file);
-      task.snapshotEvents.listen((e) {
-        if (!mounted) return;
-        if (e.totalBytes > 0) {
-          setState(() {
-            _uploadProgress = e.bytesTransferred / e.totalBytes;
-          });
-        }
-      });
-      await task;
-      final url = await ref.getDownloadURL();
-      await FirebaseFirestore.instance
-          .collection('users')
-          .doc(uid)
-          .update({'photoUrl': url});
+      await ProfileMediaService.uploadAvatarJpeg(
+        file,
+        onProgress: (p) {
+          if (!mounted) return;
+          setState(() => _uploadProgress = p);
+        },
+      );
       if (!mounted) return;
       setState(() => _uploading = false);
       ScaffoldMessenger.of(context).showSnackBar(
@@ -314,11 +309,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (chosen == UserRole.attorney) {
         await ref.set(<String, dynamic>{
           'role': 'attorney',
+          'accountType': 'attorney',
           'onboardingStep': OnboardingSteps.onboardingComplete,
         }, SetOptions(merge: true));
+        await ServerBillingSync.applyCounselSubscriptionDefaults();
       } else {
         await ref.set(<String, dynamic>{
           'role': 'parent',
+          'accountType': 'parent',
           'onboardingStep': OnboardingSteps.onboardingComplete,
         }, SetOptions(merge: true));
       }
@@ -350,6 +348,57 @@ class _ProfileScreenState extends State<ProfileScreen> {
       MaterialPageRoute<void>(builder: (_) => const EntryScreen()),
       (_) => false,
     );
+  }
+
+  Future<void> _restorePurchases() async {
+    final cx = context.read<CaseContext>();
+    if (cx.isAttorney) return;
+    try {
+      await Purchases.restorePurchases();
+      final active = await RevenueCatService.hasProEntitlement();
+      if (!mounted) return;
+      if (active) {
+        await PremiumSyncService.syncPremiumWithBackend();
+        final user = FirebaseAuth.instance.currentUser;
+        if (user != null) {
+          final info = await Purchases.getCustomerInfo();
+          await SubscriptionUserFirestoreSync.applyProEntitlement(
+            info: info,
+            planKey: 'restore',
+            onboardingStep: OnboardingSteps.subscribed,
+          );
+          await SubscriptionUserFirestoreSync.syncTrialConsumptionFromCustomerInfo(
+            info,
+          );
+        }
+        await cx.refreshPremiumStatus();
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Membership is active — your records stay organized.'),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('No active membership found for this account.'),
+          ),
+        );
+      }
+    } catch (e, st) {
+      await CrashlyticsService.recordError(
+        e,
+        st,
+        reason: 'profile_restore_purchases',
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Restore failed. Check your connection and try again.'),
+          ),
+        );
+      }
+    }
   }
 
   Future<void> _openSubscriptionManagement() async {
@@ -518,7 +567,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     final fullName = '$firstName $lastName'.trim().isEmpty
                         ? 'Parent'
                         : '$firstName $lastName'.trim();
-                    final photoUrl = d['photoUrl'] as String?;
+                    final photoUrl =
+                        (d['profilePhotoUrl'] ?? d['photoUrl']) as String?;
                     final roleLabel = _profileRoleLabel(d);
 
                     return ListView(
@@ -649,6 +699,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4),
                         child: DropdownButtonFormField<UiTone>(
+                          key: ValueKey<UiTone>(
+                            context.watch<TonePreference>().tone,
+                          ),
                           decoration: InputDecoration(
                             filled: true,
                             fillColor: PLDesign.card,
@@ -665,7 +718,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               vertical: 4,
                             ),
                           ),
-                          value: context.watch<TonePreference>().tone,
+                          initialValue: context.watch<TonePreference>().tone,
                           items: [
                             DropdownMenuItem(
                               value: UiTone.neutral,
@@ -705,13 +758,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           },
                         ),
                       ),
-                      if (!session.isAttorney) ...[
-                        const SizedBox(height: 22),
-                        _SectionTitle('Subscription'),
-                        const SizedBox(height: 10),
+                      const SizedBox(height: 22),
+                      _SectionTitle('Subscription'),
+                      const SizedBox(height: 10),
+                      if (session.isAttorney)
+                        const _AttorneyProfessionalAccessCard()
+                      else ...[
                         _SubscriptionPanel(
-                          onManage: _openSubscriptionManagement,
+                          onManage: () async {
+                            await Navigator.push<void>(
+                              context,
+                              MaterialPageRoute<void>(
+                                builder: (_) => const ManagePlanScreen(),
+                              ),
+                            );
+                          },
                           onCancel: _openSubscriptionManagement,
+                          onRestore: _restorePurchases,
                         ),
                         const SizedBox(height: 12),
                         _ProfileTile(
@@ -1057,14 +1120,71 @@ class _ProfileTile extends StatelessWidget {
   }
 }
 
+class _AttorneyProfessionalAccessCard extends StatelessWidget {
+  const _AttorneyProfessionalAccessCard();
+
+  @override
+  Widget build(BuildContext context) {
+    final session = context.watch<CaseContext>();
+    final flags = session.entitlementFlags;
+    final preview = flags.entries
+        .where((e) => e.value == true)
+        .map((e) => e.key)
+        .take(6)
+        .join(' · ');
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: PLDesign.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: PLDesign.border),
+        boxShadow: PLDesign.softShadow,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Attorney Professional Access',
+            style: PLDesign.sectionTitle.copyWith(fontSize: 20),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Counsel workspace is enabled. Store billing and parent subscription '
+            'options are hidden — you have full professional access to case tools.',
+            style: PLDesign.caption.copyWith(height: 1.35),
+          ),
+          if (preview.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              'Active capabilities',
+              style: PLDesign.caption.copyWith(
+                fontWeight: FontWeight.w700,
+                color: PLDesign.textMuted,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              preview,
+              style: PLDesign.caption.copyWith(height: 1.3),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _SubscriptionPanel extends StatelessWidget {
   const _SubscriptionPanel({
     required this.onManage,
     required this.onCancel,
+    required this.onRestore,
   });
 
   final Future<void> Function() onManage;
   final Future<void> Function() onCancel;
+  final Future<void> Function() onRestore;
 
   static String _planTitle(
     EntitlementInfo? active,
@@ -1176,6 +1296,14 @@ class _SubscriptionPanel extends StatelessWidget {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  onPressed: () => onRestore(),
+                  child: const Text('Restore purchases'),
+                ),
               ),
             ],
           ),

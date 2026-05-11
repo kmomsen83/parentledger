@@ -9,7 +9,7 @@ import { HttpsError, onCall } from "firebase-functions/v2/https";
 
 import { requireAuthUid } from "./callable_auth";
 
-/** Must not run at module load — `index.ts` initializes the default app first. */
+/** Must not run at module load — `firebase_init.ts` bootstraps the default app before handlers run. */
 function firestore() {
   return admin.firestore();
 }

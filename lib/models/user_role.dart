@@ -13,5 +13,15 @@ enum UserRole {
     return UserRole.parent;
   }
 
+  /// Prefer explicit `role`, then `accountType` (client merges can briefly skew).
+  static UserRole fromUserData(Map<String, dynamic>? data) {
+    if (data == null) return UserRole.parent;
+    final fromRole = fromObject(data['role']);
+    if (fromRole == UserRole.attorney) return UserRole.attorney;
+    final at = (data['accountType'] ?? '').toString().trim().toLowerCase();
+    if (at == 'attorney') return UserRole.attorney;
+    return UserRole.parent;
+  }
+
   bool get isAttorney => this == UserRole.attorney;
 }

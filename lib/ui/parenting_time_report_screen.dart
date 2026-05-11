@@ -294,9 +294,9 @@ return Container(
 margin: const EdgeInsets.only(bottom: 12),
 padding: const EdgeInsets.all(16),
 decoration: BoxDecoration(
-color: PLDesign.warning.withOpacity(.08),
+color: PLDesign.warning.withValues(alpha:.08),
 borderRadius: BorderRadius.circular(16),
-border: Border.all(color: PLDesign.warning.withOpacity(.3)),
+border: Border.all(color: PLDesign.warning.withValues(alpha:.3)),
 ),
 child: Row(
 children: [

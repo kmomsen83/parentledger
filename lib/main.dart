@@ -10,6 +10,7 @@ import 'l10n/tone_string_resolver.g.dart';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'config/env.dart';
+import 'ui/attorney/attorney_dashboard_screen.dart';
 import 'ui/dashboard_screen.dart';
 import 'ui/help_center_screen.dart';
 import 'ui/route_case_guard.dart';
@@ -25,6 +26,7 @@ import 'services/app_check_bootstrap.dart';
 import 'services/revenuecat_service.dart';
 import 'services/subscription_service.dart';
 import 'services/crashlytics_service.dart';
+import 'services/push_notification_service.dart';
 import 'startup_diag.dart';
 
 /// Always logs to console during Firebase bootstrap so failures are visible in `flutter run`.
@@ -246,6 +248,7 @@ class _AppBootstrapState extends State<AppBootstrap> {
   void initState() {
     super.initState();
     startupDiag('AppBootstrap', 'initState → RC + invites (async)');
+    PushNotificationService.start();
     unawaited(_initializeNonFirebaseServices());
   }
 
@@ -361,11 +364,25 @@ class _ParentLedgerAppState extends State<ParentLedgerApp> {
       home: const SplashScreen(),
       routes: <String, WidgetBuilder>{
         '/help': (_) => const HelpCenterScreen(),
-        '/dashboard': (_) => const DashboardScreen(),
+        '/dashboard': (_) => const RoleAwareHomeDashboard(),
         '/accept-invite': (_) => const InviteAcceptNamedRoute(),
       },
       onGenerateRoute: CaseRoutes.onGenerateRoute,
       builder: (context, child) => child ?? const SizedBox.shrink(),
     );
+  }
+}
+
+/// Named-route entry for `/dashboard` so universal links cannot place counsel on the parent shell.
+class RoleAwareHomeDashboard extends StatelessWidget {
+  const RoleAwareHomeDashboard({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final session = context.watch<CaseContext>();
+    if (session.isAttorney) {
+      return const AttorneyDashboardScreen();
+    }
+    return const DashboardScreen();
   }
 }

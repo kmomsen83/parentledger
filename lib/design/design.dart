@@ -163,7 +163,7 @@ color: Colors.white,
 
 static List<BoxShadow> glowShadow = [
 BoxShadow(
-color: primary.withOpacity(.35),
+color: primary.withValues(alpha: .35),
 blurRadius: 40,
 spreadRadius: 2,
 ),
@@ -189,24 +189,24 @@ boxShadow: softShadow,
 static BoxDecoration aiSurface = BoxDecoration(
 gradient: LinearGradient(
 colors: [
-ai.withOpacity(.18),
-primary.withOpacity(.10),
+ai.withValues(alpha: .18),
+primary.withValues(alpha: .10),
 ],
 ),
 borderRadius: r20,
-border: Border.all(color: ai.withOpacity(.4)),
+border: Border.all(color: ai.withValues(alpha: .4)),
 );
 
 static BoxDecoration alertDanger = BoxDecoration(
-color: danger.withOpacity(.08),
+color: danger.withValues(alpha: .08),
 borderRadius: r16,
-border: Border.all(color: danger.withOpacity(.4)),
+border: Border.all(color: danger.withValues(alpha: .4)),
 );
 
 static BoxDecoration alertWarning = BoxDecoration(
-color: warning.withOpacity(.08),
+color: warning.withValues(alpha: .08),
 borderRadius: r16,
-border: Border.all(color: warning.withOpacity(.4)),
+border: Border.all(color: warning.withValues(alpha: .4)),
 );
 
 static BoxDecoration legalCard = BoxDecoration(
@@ -313,6 +313,30 @@ static const TextStyle dashboardHeroSubtitle = TextStyle(
   fontWeight: FontWeight.w400,
 );
 
+/// Onboarding & invite surfaces — calm hierarchy, generous line height.
+static const TextStyle onboardingDisplayTitle = TextStyle(
+  fontSize: 28,
+  height: 1.12,
+  fontWeight: FontWeight.w700,
+  letterSpacing: -0.45,
+  color: Colors.white,
+);
+
+static const TextStyle onboardingSupporting = TextStyle(
+  fontSize: 15,
+  height: 1.5,
+  fontWeight: FontWeight.w500,
+  color: textMuted,
+);
+
+static const TextStyle onboardingTrustChip = TextStyle(
+  fontSize: 11.5,
+  height: 1.25,
+  fontWeight: FontWeight.w600,
+  letterSpacing: 0.15,
+  color: Color(0xffcbd5e1),
+);
+
 /// ================= COMPONENTS =================
 
 static Widget cardBox({required Widget child, EdgeInsets? padding}) {
@@ -367,9 +391,6 @@ child,
 );
 }
 }
-
-/// 🔥🔥🔥 THIS IS WHAT FIXES YOUR ERROR 🔥🔥🔥
-/// MUST BE OUTSIDE THE CLASS
 
 final ThemeData appTheme = ThemeData(
 brightness: Brightness.dark,

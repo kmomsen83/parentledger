@@ -232,7 +232,7 @@ service cloud.firestore {
 
     function expenseMutableKeysOnly(next, prev) {
       return next.diff(prev).affectedKeys()
-        .hasOnly(['paid', 'status', 'updatedAt']);
+        .hasOnly(['paid', 'status', 'updatedAt', 'receiptUrl']);
     }
 
     /// Case thread message body + sender + time are immutable after create.
@@ -274,7 +274,18 @@ service cloud.firestore {
           'pinnedThread',
           'mutedBy',
           'lastMessageAt',
+          'typingUserId',
+          'typingUpdatedAt',
         ]);
+    }
+
+    function userFcmTokensOk() {
+      let next = request.resource.data;
+      return !('fcmTokens' in next)
+        || (
+          next.fcmTokens is list
+          && next.fcmTokens.size() <= 12
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -368,15 +379,59 @@ service cloud.firestore {
     // -------------------------------------------------------------------------
 
     match /users/{userId} {
+      /// Billing / premium fields are RevenueCat webhook + Admin only (see `revenueCatWebhook`, callables).
+      function clientPremiumStateImmutable() {
+        return !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny([
+            'isPremium',
+            'subscriptionTier',
+            'premiumSource',
+            'subscriptionStatus',
+            'entitlementId',
+            'premiumUpdatedAt',
+            'entitlementFlags',
+            'accessLevel',
+            'rcLastEventType',
+            'rcLastEventId',
+          ]);
+      }
+
+      function freeTrialUsedOk() {
+        return !('freeTrialUsed' in request.resource.data)
+          || request.resource.data.freeTrialUsed is bool;
+      }
+
+      function accountTypeOk() {
+        return !('accountType' in request.resource.data)
+          || request.resource.data.accountType in ['parent', 'attorney'];
+      }
+
+      function profilePhotoUrlOk() {
+        return !('profilePhotoUrl' in request.resource.data)
+          || (
+            request.resource.data.profilePhotoUrl is string
+            && request.resource.data.profilePhotoUrl.size() <= 2048
+          );
+      }
+
       function userAccessLevelOk() {
         let al = request.resource.data.get('accessLevel', 'free');
         return al == 'free' || al == 'subscription' || al == 'lifetime';
       }
 
+      /// Normalizes legacy `role: null` / missing / invalid to `parent` so
+      /// parent → attorney onboarding merges are not rejected.
+      function normalizedUserPrimaryRole(data) {
+        return (!('role' in data) || data.role == null || !(data.role is string)
+            || data.role == '')
+          ? 'parent'
+          : (data.role == 'attorney' ? 'attorney' : 'parent');
+      }
+
       /// Parent ↔ attorney only (future multi-role could extend this list).
       function userPrimaryRoleOk() {
-        let prev = resource.data.get('role', 'parent');
-        let next = request.resource.data.get('role', 'parent');
+        let prev = normalizedUserPrimaryRole(resource.data);
+        let next = normalizedUserPrimaryRole(request.resource.data);
         return next == prev
           || (prev == 'parent' && next == 'attorney')
           || (prev == 'attorney' && next == 'parent');
@@ -384,7 +439,7 @@ service cloud.firestore {
 
       /// Mom/dad/guardian when parent; unchanged while switching to attorney.
       function userParentTypeOk() {
-        let nextRole = request.resource.data.get('role', 'parent');
+        let nextRole = normalizedUserPrimaryRole(request.resource.data);
         let ptPrev = resource.data.get('parentType', 'mom');
         let ptNext = request.resource.data.get('parentType', ptPrev);
         return (nextRole == 'attorney' && ptNext == ptPrev)
@@ -398,13 +453,16 @@ service cloud.firestore {
         && request.resource.data.get('role', 'parent') == 'parent'
         && request.resource.data.get('parentType', 'mom') in ['mom', 'dad', 'guardian']
         && request.resource.data.get('accessLevel', 'free') in ['free', 'subscription', 'lifetime']
-        && request.resource.data.get('subscriptionTier', 'free') in ['free', 'pro'];
+        && request.resource.data.get('subscriptionTier', 'free') in ['free', 'pro', 'parent_pro', 'attorney_pro'];
       allow update: if isSelf(userId)
-        && request.resource.data.get('isPremium', false) == resource.data.get('isPremium', false)
         && userPrimaryRoleOk()
         && userParentTypeOk()
         && userAccessLevelOk()
-        && request.resource.data.get('subscriptionTier', 'free') == resource.data.get('subscriptionTier', 'free')
+        && userFcmTokensOk()
+        && clientPremiumStateImmutable()
+        && freeTrialUsedOk()
+        && accountTypeOk()
+        && profilePhotoUrlOk()
         && request.resource.data.get('caseId', '') == resource.data.get('caseId', '')
         && request.resource.data.get('mergeFromCaseId', '') == resource.data.get('mergeFromCaseId', '');
       allow delete: if false;
@@ -435,6 +493,16 @@ service cloud.firestore {
       match /cases/{caseLinkId} {
         allow read: if isSelf(userId);
         allow create, update, delete: if false;
+      }
+
+      /// Private per-user child photo metadata (not shared with co-parent via case doc).
+      /// Storage paths: `users/{uid}/children/{childId}/photos/...`.
+      match /childPrivate/{childId} {
+        allow read, delete: if isSelf(userId);
+        allow create, update: if isSelf(userId)
+          && request.resource.data.get('uploadedByUid', request.auth.uid) == request.auth.uid
+          && request.resource.data.uploadedByUid == request.auth.uid
+          && (!('photoUrls' in request.resource.data) || request.resource.data.photoUrls is list);
       }
     }
 
@@ -757,11 +825,17 @@ service cloud.firestore {
         return get(/databases/$(database)/documents/proposals/$(proposalId)).data.status in ['pending', 'negotiating'];
       }
 
-      /// `title` may be missing on legacy rows — client defaults; do not require it or queries fail.
+      /// Read: case participants / linked counsel only. Do **not** require every legacy field
+      /// (`createdBy`, `status`, etc.) or `where(caseId==…).orderBy(createdAt)` listeners fail
+      /// when older rows omit keys.
       allow read: if signedIn()
-        && resource.data.keys().hasAll(['caseId', 'createdBy', 'status'])
         && resource.data.caseId is string
-        && ledgerCaseRead(resource.data.caseId);
+        && resource.data.caseId.size() > 0
+        && ledgerCaseRead(resource.data.caseId)
+        && (
+          !('status' in resource.data)
+          || (resource.data.status is string && resource.data.status.size() > 0)
+        );
 
       allow create: if signedIn()
         && request.resource.data.keys().hasAll([

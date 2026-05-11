@@ -30,11 +30,11 @@ margin: const EdgeInsets.only(bottom: 14),
 padding: const EdgeInsets.all(16),
 decoration: BoxDecoration(
 color:
-risk ? Colors.red.withOpacity(.08) : Colors.white,
+risk ? Colors.red.withValues(alpha:.08) : Colors.white,
 borderRadius: BorderRadius.circular(18),
 boxShadow: [
 BoxShadow(
-color: Colors.black.withOpacity(.04),
+color: Colors.black.withValues(alpha:.04),
 blurRadius: 10)
 ],
 ),

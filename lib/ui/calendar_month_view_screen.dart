@@ -1,2 +1,3 @@
-/// Monthly calendar (caseEvents-backed implementation lives under `ui/calendar/`).
+library calendar_month_view;
+
 export 'calendar/monthly_calendar_screen.dart';
